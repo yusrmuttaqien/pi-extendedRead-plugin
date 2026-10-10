@@ -10,7 +10,6 @@
   },
   "scripts": {
     "build": "tsc",
-    "postinstall": "npm run build",
     "test": "node --test dist/test/*.test.js",
     "typecheck": "tsc --noEmit"
   },

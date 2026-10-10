@@ -258,15 +258,17 @@ export async function readExtended(
 async function processImageBytes(
 	bytes: Buffer,
 	mimeType: string,
-): Promise<{ data: string; mimeType: string }> {
+): Promise<{ data: string; mimeType: string; hints?: string[] }> {
 	// pi's processImage: normalize (Photon) → resize (worker) → base64
-	// We import from pi's dist to reuse the existing pipeline.
-	// eslint-disable-next-line @typescript-eslint/no-var-requires
+	// Returns { ok: true, data, mimeType, hints } or { ok: false, message }.
 	const { processImage } = await import(
 		"@earendil-works/pi-coding-agent/dist/utils/image-process.js"
 	) as any;
 	const result = await processImage(bytes, mimeType, {
 		autoResizeImages: true,
 	});
-	return { data: result.data, mimeType: result.mimeType };
+	if (!result.ok) {
+		throw new Error(result.message ?? "Image processing failed");
+	}
+	return { data: result.data, mimeType: result.mimeType, hints: result.hints };
 }

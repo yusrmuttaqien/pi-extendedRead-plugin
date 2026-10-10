@@ -1,0 +1,32 @@
+{
+  "$docs": {
+    "models": {
+      "$description": "Map of model_id → model-specific settings. Unknown models fall back to 'defaults'.",
+      "input": "Modalities the model can receive. Valid: 'text', 'image', 'audio', 'video'. Controls which media types extendedRead returns. If 'audio' is absent, audio files return a note instead of media.",
+      "maxBytes": {
+        "$description": "Per-modality size caps (bytes). Larger files return a note.",
+        "image": "Default: 10485760 (10 MB).",
+        "audio": "Default: 20971520 (20 MB).",
+        "video": "Default: 52428800 (50 MB)."
+      }
+    },
+    "defaults": {
+      "$description": "Fallback for models not listed in 'models'.",
+      "input": "Same as models.input. Default: ['text', 'image'].",
+      "maxBytes": "Same as models.maxBytes.",
+      "executionMode": "'parallel' (concurrent reads) or 'sequential'. Default: 'parallel'.",
+      "ffmpegTimeoutMs": "ffmpeg conversion timeout (ms). Default: 30000."
+    }
+  },
+  "models": {},
+  "defaults": {
+    "input": ["text", "image"],
+    "maxBytes": {
+      "image": 10485760,
+      "audio": 20971520,
+      "video": 52428800
+    },
+    "executionMode": "parallel",
+    "ffmpegTimeoutMs": 30000
+  }
+}

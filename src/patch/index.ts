@@ -9,7 +9,7 @@
  * slash command for manual re-apply after pi updates.
  */
 
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
 import { join, dirname } from "node:path";
 
 import { targets, type PatchTarget } from "./targets.js";
@@ -87,18 +87,24 @@ export function resolvePiRoot(): string {
 	// pi's entry point is process.argv[1] (e.g. .../pi-coding-agent/dist/cli.js)
 	const entry = process.argv[1];
 	if (entry) {
-		let dir = dirname(entry);
-		for (let i = 0; i < 10; i++) {
-			const candidate = join(
-				dir,
-				"node_modules",
-				"@earendil-works",
-				"pi-coding-agent",
-			);
-			if (existsSync(join(candidate, "package.json"))) return candidate;
-			const parent = dirname(dir);
-			if (parent === dir) break;
-			dir = parent;
+		// Resolve symlinks (bin/pi → lib/node_modules/.../dist/bundle/cli.js)
+		let realEntry = entry;
+		try { realEntry = realpathSync(entry); } catch {}
+		// Try both the real path and the original
+		for (const start of [dirname(realEntry), dirname(entry)]) {
+			let dir = start;
+			for (let i = 0; i < 10; i++) {
+				const candidate = join(
+					dir,
+					"node_modules",
+					"@earendil-works",
+					"pi-coding-agent",
+				);
+				if (existsSync(join(candidate, "package.json"))) return candidate;
+				const parent = dirname(dir);
+				if (parent === dir) break;
+				dir = parent;
+			}
 		}
 	}
 	throw new Error(

@@ -10,8 +10,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
-import { createRequire } from "node:module";
+import { join, dirname } from "node:path";
 
 import { targets, type PatchTarget } from "./targets.js";
 
@@ -83,16 +82,28 @@ export function applyPatches(piRoot: string): PatchResult[] {
 	return results;
 }
 
-/** Resolve pi's install root from the pi-coding-agent package. */
+/** Resolve pi's install root by walking up from pi's entry point. */
 export function resolvePiRoot(): string {
-	const require = createRequire(import.meta.url);
-	const pkgPath = require.resolve(
-		"@earendil-works/pi-coding-agent/package.json",
+	// pi's entry point is process.argv[1] (e.g. .../pi-coding-agent/dist/cli.js)
+	const entry = process.argv[1];
+	if (entry) {
+		let dir = dirname(entry);
+		for (let i = 0; i < 10; i++) {
+			const candidate = join(
+				dir,
+				"node_modules",
+				"@earendil-works",
+				"pi-coding-agent",
+			);
+			if (existsSync(join(candidate, "package.json"))) return candidate;
+			const parent = dirname(dir);
+			if (parent === dir) break;
+			dir = parent;
+		}
+	}
+	throw new Error(
+		"Cannot find @earendil-works/pi-coding-agent package root",
 	);
-	// pkgPath is like /path/to/node_modules/@earendil-works/pi-coding-agent/package.json
-	// Root is two levels up: /path/to/node_modules/@earendil-works/pi-coding-agent/
-	const root = pkgPath.split("package.json")[0];
-	return root;
 }
 
 /** Read pi's version from its package.json. */

@@ -1,6 +1,6 @@
 # `extendedRead` — Design Spec
 
-A model-invoked tool that reads media files (images, audio, video) and returns them as attachments the model can perceive. Complements the native `read` tool (text + basic images) by adding audio, video, and extended image formats.
+A model-invoked tool that reads media files (images, audio, video, PDF) and returns them as attachments the model can perceive. Complements the native `read` tool (text + basic images) by adding audio, video, extended image formats, and PDF reading.
 
 ## 1. Goal
 
@@ -9,6 +9,7 @@ Provide the model with a dedicated tool for media files. The native `read` tool 
 - More image formats (heic, heif, tiff, tif, tga, avif).
 - Audio (wav, mp3, flac, ogg, aiff, aif, m4a, aac, wma, opus).
 - Video (mp4, webm, mkv, mov, avi).
+- **PDF** (text extraction + visual page rendering, with pagination).
 
 Media enters the context **lazily** — only when the model calls the tool.
 
@@ -99,6 +100,8 @@ defineTool({
   ],
   parameters: Type.Object({
     path: Type.String({ description: "Path to the file (relative, absolute, or ~)" }),
+    pages: Type.Optional(Type.String({ description: "Page selector for PDFs: '1', '1-5', '3,7,12' (default: '1')" })),
+    mode: Type.Optional(Type.Union([Type.Literal("text"), Type.Literal("image")], { description: "PDF mode: 'text' (default) or 'image'" })),
   }),
   executionMode: config.defaults.executionMode,
   async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -156,6 +159,11 @@ async function readExtended(params, ctx): Promise<AgentToolResult> {
   }
   // ... video direct/convertible (same pattern) ...
 
+  // --- PDF ---
+  if (ext === "pdf") {
+    return readPdf(path, params, config);
+  }
+
   return note(`[extendedRead: unsupported format ${ext}]`);
 }
 ```
@@ -183,6 +191,14 @@ Mirrors native `read`'s flow: resolve → stat → detect → process → return
 - Output to `os.tmpdir()` as `pi-media-<pid>-<uuid>.<ext>`.
 - base64-encode the temp file bytes.
 - **Cleanup:** OS-managed. No ledger.
+
+### PDF pipeline (mupdf WASM, in-memory)
+- **Library:** `mupdf` npm package (MuPDF C engine in WebAssembly). ESM, zero native deps, AGPL.
+- **Text mode** (default): `page.toStructuredText("preserve-whitespace").asText()` per page. Lightweight, works with any model.
+- **Image mode**: `page.toPixmap(Matrix.scale(dpi/72, dpi/72), ColorSpace.DeviceRGB).asPNG()` per page. For visual escalation.
+- **Pagination:** `pages` param accepts `"1"`, `"1-5"`, `"3,7,12"`. Default: page 1. Response includes total page count so the model can navigate.
+- **Memory:** mupdf uses WASM memory (not GC'd). All objects (`doc`, `page`, `pixmap`, `stext`) must be `.destroy()`'d in `finally` blocks.
+- **Config:** `pdf.defaultDpi` (150), `pdf.maxPagesPerCall` (10), `pdf.maxTextChars` (50000).
 
 ## 7. Wire format & serialization
 
@@ -274,11 +290,12 @@ pi-media-plugin/
 | Images | 5 formats (jpg, png, gif, webp, bmp), magic-byte sniff | 12 formats (adds heic/heif/tiff/tif/tga/avif via ffmpeg) |
 | Audio | no | yes |
 | Video | no | yes |
+| PDF | no | yes (text extraction + visual rendering, pagination) |
 | Resize | in-memory (Photon) | in-memory (reuse Photon) |
 | Serialization | pi's `convertMessages` (native) | pi's `convertMessages` (patched) |
 | Trigger | model calls `read` | model calls `extendedRead` |
 
-**`extendedRead` is a media superset of native `read`.** It handles all image formats the native `read` handles (jpg, png, gif, webp, bmp) **plus** more (heic, heif, tiff, tif, tga, avif), plus audio and video. It does **not** handle text — the native `read` continues to handle text.
+**`extendedRead` is a media superset of native `read`.** It handles all image formats the native `read` handles (jpg, png, gif, webp, bmp) **plus** more (heic, heif, tiff, tif, tga, avif), plus audio, video, and PDF. It does **not** handle text — the native `read` continues to handle text.
 
 **Coexist, not replace.** The two tools are complementary:
 - `read` → text files (and images, if the model prefers).
@@ -297,6 +314,9 @@ The model picks the tool based on file type. There's no conflict: both can handl
 | `~` in path | expanded to `homedir()` |
 | `ffmpeg.path` missing | graceful: no conversion, note |
 | Model doesn't support modality | note ("Model does not support audio") |
+| PDF: page out of range | silently skipped (no error) |
+| PDF: empty page selector | defaults to page 1 |
+| PDF: text exceeds `maxTextChars` | truncated with `[truncated]` marker |
 
 ## 13. Cleanup
 
@@ -307,5 +327,6 @@ The model picks the tool based on file type. There's no conflict: both can handl
 ## 14. Future work
 
 - **Compaction interleave:** shedding stale tool-result media depends on a future pi compaction feature.
-- **PDF support:** extend `extendedRead` to handle PDF files (render pages to images via `pdftoppm` or similar).
 - **Resize options exposure:** whether to let the model control image resize parameters.
+- **PDF: table of contents** — extract and return the PDF outline/TOC for navigation.
+- **PDF: text search** — `mupdf` supports `page.search(needle)`; expose as a tool parameter.

@@ -1,0 +1,311 @@
+# `extendedRead` — Design Spec
+
+A model-invoked tool that reads media files (images, audio, video) and returns them as attachments the model can perceive. Complements the native `read` tool (text + basic images) by adding audio, video, and extended image formats.
+
+## 1. Goal
+
+Provide the model with a dedicated tool for media files. The native `read` tool handles text and a small set of image formats (jpg, png, gif, webp, bmp). `extendedRead` extends this to:
+
+- More image formats (heic, heif, tiff, tif, tga, avif).
+- Audio (wav, mp3, flac, ogg, aiff, aif, m4a, aac, wma, opus).
+- Video (mp4, webm, mkv, mov, avi).
+
+Media enters the context **lazily** — only when the model calls the tool.
+
+## 2. Design principles
+
+| Principle | Choice |
+|---|---|
+| Media enters context | Lazily, only on tool call |
+| Images | In-memory (no temp file) — reuse pi's Photon/resize pipeline |
+| Audio / video | `ffmpeg` → `/tmp` → base64 → content block in tool result |
+| Serialization | **Native mechanism** — tool returns content blocks, pi's `convertMessages` serializes. No hook, no marker. |
+| Format handling | Deterministic; same support matrix across platforms |
+| Cleanup | OS-managed `/tmp`; no bookkeeping |
+| Pi patch | Bundled with plugin, applied on load + via `/media-patch` slash command |
+| Configuration | User-editable `config.json` with self-documenting `$docs` key |
+
+## 3. Config file
+
+Location: `~/.pi/agent/extensions/pi-media-plugin/config.json`
+
+The config is **self-documenting**: a `$docs` key describes every other key and its valid values.
+
+```json
+{
+  "$docs": {
+    "models": {
+      "$description": "Map of model_id → model-specific settings. Unknown models fall back to 'defaults'.",
+      "input": "Modalities the model can receive. Valid: 'text', 'image', 'audio', 'video'. Controls which media types extendedRead returns. If 'audio' is absent, audio files return a note instead of media.",
+      "maxBytes": {
+        "$description": "Per-modality size caps (bytes). Larger files return a note.",
+        "image": "Default: 10485760 (10 MB).",
+        "audio": "Default: 20971520 (20 MB).",
+        "video": "Default: 52428800 (50 MB)."
+      }
+    },
+    "defaults": {
+      "$description": "Fallback for models not listed in 'models'.",
+      "input": "Same as models.input. Default: ['text', 'image'].",
+      "maxBytes": "Same as models.maxBytes."},
+      "executionMode": "'parallel' (concurrent reads) or 'sequential'. Default: 'parallel'.",
+      "ffmpegTimeoutMs": "ffmpeg conversion timeout (ms). Default: 30000."
+    }
+  },
+  "models": {
+    "llama-3.2-11b-vision": {
+      "input": ["text", "image"]
+    },
+    "multimodal-av-model": {
+      "input": ["text", "image", "audio", "video"],
+      "maxBytes": {
+        "video": 104857600
+      }
+    }
+  },
+  "defaults": {
+    "input": ["text", "image"],
+    "maxBytes": {
+      "image": 10485760,
+      "audio": 20971520,
+      "video": 52428800
+    },
+    "executionMode": "parallel",
+    "ffmpegTimeoutMs": 30000
+  }
+}
+```
+
+**Capability gating:** the tool checks `config.models[modelId].input` (or `defaults.input`) before returning media blocks. If the model doesn't list `"audio"`, an audio file returns a text note (`"Model does not support audio"`) instead of an `audio` block. This replaces pi's `model.input.includes("image")` gate with a user-configurable equivalent.
+
+## 4. Tool definition
+
+Registered via `pi.registerTool(...)` (see `dist/core/extensions/types.d.ts`, `ToolDefinition`).
+
+```ts
+defineTool({
+  name: "extendedRead",
+  label: "Extended Read",
+  description:
+    "Read a media file and return it as an attachment the model can perceive. " +
+    "Images: png, jpg, jpeg, gif, webp, bmp, heic, heif, tiff, tif, tga, avif. " +
+    "Audio: wav, mp3, flac, ogg, aiff, aif, m4a, aac, wma, opus. " +
+    "Video: mp4, webm, mkv, mov, avi. " +
+    "For text files, use the native read tool.",
+  promptSnippet: "Read media files",
+  promptGuidelines: [
+    "Use extendedRead to read media files (images, audio, video) the user references.",
+    "Use the native read tool for text files.",
+  ],
+  parameters: Type.Object({
+    path: Type.String({ description: "Path to the file (relative, absolute, or ~)" }),
+  }),
+  executionMode: config.defaults.executionMode,
+  async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    return await readExtended(params, ctx);
+  },
+});
+```
+
+## 5. Behavior / dispatch
+
+```ts
+async function readExtended(params, ctx): Promise<AgentToolResult> {
+  // 1. Resolve
+  const path = resolve(ctx.cwd, expandTilde(params.path));
+
+  // 2. Stat
+  let stat;
+  try { stat = await fs.stat(path); }
+  catch { return err(`File not found: ${path}`); }
+  if (!stat.isFile()) return err(`Not a file: ${path}`);
+
+  // 3. Size cap (per-modality)
+  const modality = modalityOf(ext); // "image" | "audio" | "video" | undefined
+  if (modality && stat.size > maxBytes[modality])
+    return note(`File too large (${stat.size} > ${maxBytes[modality]} bytes for ${modality})`);
+
+  // 4. Capability gate
+  const input = modelInput(ctx.modelId); // from config
+  const ext = extname(path).toLowerCase().slice(1);
+
+  // 5. Dispatch
+  if (IMAGE_DIRECT[ext]) {
+    if (!input.includes("image")) return note("Model does not support images");
+    const bytes = await fs.readFile(path);
+    const { data, mimeType } = await processImage(bytes, MIME[ext]);
+    return ok([txt(`Read image [${mimeType}]`), img(data, mimeType)]);
+  }
+  if (IMAGE_CONVERT[ext]) {
+    if (!input.includes("image")) return note("Model does not support images");
+    const tmp = await ffmpegConvert(path, "png");
+    const bytes = await fs.readFile(tmp); rm(tmp);
+    const { data, mimeType } = await processImage(bytes, "image/png");
+    return ok([txt(`Read image [${mimeType}]`), img(data, mimeType)]);
+  }
+  if (AUDIO_DIRECT[ext]) {
+    if (!input.includes("audio")) return note("Model does not support audio");
+    const b64 = (await fs.readFile(path)).toString("base64");
+    return ok([txt(`Read audio [${MIME[ext]}]`), aud(b64, MIME[ext])]);
+  }
+  if (AUDIO_CONVERT[ext]) {
+    if (!input.includes("audio")) return note("Model does not support audio");
+    const tmp = await ffmpegConvert(path, "mp3");
+    const b64 = (await fs.readFile(tmp)).toString("base64"); rm(tmp);
+    return ok([txt("Read audio [audio/mpeg]"), aud(b64, "audio/mpeg")]);
+  }
+  // ... video direct/convertible (same pattern) ...
+
+  return note(`[extendedRead: unsupported format ${ext}]`);
+}
+```
+
+Mirrors native `read`'s flow: resolve → stat → detect → process → return. Difference: extension-based dispatch (vs. magic bytes), capability gating, and media branches.
+
+## 6. Media handling
+
+### Format support matrix
+
+| Modality | Direct (no conversion) | Converted via `ffmpeg` → target |
+|---|---|---|
+| Image | png, jpg, jpeg, gif, webp, bmp | heic, heif, tiff, tif, tga, avif → **png** |
+| Audio | wav, mp3, flac, ogg, aiff, aif | m4a, aac, wma, opus → **mp3** |
+| Video | mp4 | webm, mkv, mov, avi → **mp4** |
+
+### Image pipeline (in-memory, no `/tmp`, resize)
+- Reuse pi's `processImage(bytes, mimeType, { autoResizeImages: true, resizeOptions })` (`dist/utils/image-process.js`).
+- Normalizes via **Photon** (WASM, in-process) and resizes in a worker thread.
+- Returns `{ data: base64, mimeType }`. No disk write, nothing to clean up.
+- **Resize is image-only.** Video/audio are not resized — they pass through ffmpeg as-is.
+
+### Audio / video pipeline (`/tmp`, no resize)
+- Run bundled `ffmpeg` (`@ffmpeg-installer/ffmpeg` → `ffmpeg.path`) with `execFile(ffmpeg.path, ["-y", "-i", in, out], { timeout: ffmpegTimeoutMs })`.
+- Output to `os.tmpdir()` as `pi-media-<pid>-<uuid>.<ext>`.
+- base64-encode the temp file bytes.
+- **Cleanup:** OS-managed. No ledger.
+
+## 7. Wire format & serialization
+
+All media uses the **native mechanism**: the tool returns content blocks in the tool result, pi's `convertMessages` serializes them, **no hook, no marker**. This mirrors the native `read` tool's image path exactly.
+
+pi's OpenAI-compatible provider currently serializes **only `image` content blocks** → `image_url` parts. It does **not** serialize audio/video content blocks.
+
+**The patch** (see §8) extends `convertMessages` to serialize `audio` and `video` content blocks the same way it serializes `image` blocks:
+
+| Content block | Serialized as |
+|---|---|
+| `{ type: "image", data, mimeType }` | `{ type: "image_url", image_url: { url: "data:${mimeType};base64,${data}" } }` |
+| `{ type: "audio", data, mimeType }` | `{ type: "input_audio", input_audio: { data, format: mimeType } }` |
+| `{ type: "video", data, mimeType }` | `{ type: "input_video", input_video: { data, format: mimeType } }` |
+
+The patched `convertMessages` extracts these blocks from tool results and pushes them as a separate user message (same pattern as the existing image path). No hook, no marker, no payload rewrite.
+
+**Consequence for compaction:** because the media is in the conversation (tool result), not hidden in the payload, compaction can see it. The patch also extends compaction's size estimation to account for `audio` and `video` blocks (see §8).
+
+## 8. Pi patch
+
+The native mechanism for audio/video requires a patch to pi's provider bundle, compaction, and type declarations. The patch is **bundled with the plugin**, versioned with it, and applied automatically.
+
+### Patch targets
+
+| ID | File | Change |
+|---|---|---|
+| `convertMessages` | `dist/bundle/chunks/openai-completions-*.js` | Add `audio`/`video` block detection + serialization |
+| `compaction` | `dist/core/compaction/compaction.js` | Add `ESTIMATED_AUDIO_CHARS`, `ESTIMATED_VIDEO_CHARS`; extend size walk |
+| `types` | `dist/core/extensions/types.d.ts` | Add `AudioContent`, `VideoContent` to content-block union |
+
+### How it's applied
+
+- **Automatic on plugin load.** The plugin's activation checks for a sentinel comment (`// pi-media-patch:v1:<targetId>`) in each target file. If absent, it reads the file, applies the string replacement, writes it back, and inserts the sentinel. Idempotent.
+- **Slash command** (`/media-patch`). Forces re-apply. Reports per-target: "patched", "already present", or "target not found (pi update?)".
+
+### Locating files
+
+- Bundle: `require.resolve("@earendil-works/pi-coding-agent/package.json")` → `dist/bundle/chunks/` → glob `openai-completions-*.js`.
+- Compaction: same root → `dist/core/compaction/compaction.js`.
+- Types: same root → `dist/core/extensions/types.d.ts`.
+
+### Versioning, failure & maintenance
+
+- Sentinel: `// pi-media-patch:v1:<targetId>`. Version mismatch → re-apply.
+- **Pi version recorded:** the plugin reads the pi version from `@earendil-works/pi-coding-agent/package.json` and stores it alongside the sentinel. `/media-patch` reports: `"patched against pi v0.4.2"`.
+- If a target's anchor string doesn't match (pi structural change), the plugin warns: `"pi-media-patch: target '<id>' not found — pi update may have changed the code. Manual review needed."` Loud, not silent.
+- **Maintenance:** when pi updates and a target fails, read the new bundle, update the anchor + replace in `targets.ts`, bump the sentinel version, re-apply via `/media-patch`. `PATCHES.md` is the checklist.
+
+## 9. Plugin structure
+
+```
+pi-media-plugin/
+  src/
+    index.ts            — plugin entry: registerTool + activate (apply patches, load config)
+    readExtended.ts     — tool implementation (§5 sketch)
+    config.ts           — loads config.json, exposes model capabilities + knobs
+    patch/
+      index.ts          — locate files, apply all targets, register /media-patch
+      targets.ts        — PatchTarget definitions (anchor, replace, sentinel)
+      convertMessages.ts
+      compaction.ts
+      types.ts
+  config.json           — user-editable (self-documenting, §3)
+  PATCHES.md            — maintenance doc: table of targets, anchors, sentinels
+  test/
+    readExtended.test.ts
+    patch.test.ts
+```
+
+### Self-documenting conventions
+
+- Every source file starts with a block comment: purpose, pi version targeted, verification steps.
+- Each `PatchTarget` includes the **exact anchor string** in a comment, so when pi changes, you diff the anchor against the new bundle.
+- `PATCHES.md`: one table row per target — ID, file, what it does, anchor (first 40 chars), sentinel. Your maintenance checklist after pi updates.
+- `/media-patch` output is the diagnostic: per-target status + the anchor that failed (if any).
+
+## 10. Context management
+
+- **Laziness:** media is in the context only after the model calls the tool.
+- **Compaction interleave:** tool results are compactable; media can be shed and re-read on demand (depends on a future pi compaction feature).
+- **Ephemeral across compaction:** accepted; re-read from source is cheap and deterministic.
+
+## 11. Relationship with native `read`
+
+| | Native `read` | `extendedRead` |
+|---|---|---|
+| Text | yes | no (use native `read`) |
+| Images | 5 formats (jpg, png, gif, webp, bmp), magic-byte sniff | 12 formats (adds heic/heif/tiff/tif/tga/avif via ffmpeg) |
+| Audio | no | yes |
+| Video | no | yes |
+| Resize | in-memory (Photon) | in-memory (reuse Photon) |
+| Serialization | pi's `convertMessages` (native) | pi's `convertMessages` (patched) |
+| Trigger | model calls `read` | model calls `extendedRead` |
+
+**`extendedRead` is a media superset of native `read`.** It handles all image formats the native `read` handles (jpg, png, gif, webp, bmp) **plus** more (heic, heif, tiff, tif, tga, avif), plus audio and video. It does **not** handle text — the native `read` continues to handle text.
+
+**Coexist, not replace.** The two tools are complementary:
+- `read` → text files (and images, if the model prefers).
+- `extendedRead` → media files (images, audio, video).
+
+The model picks the tool based on file type. There's no conflict: both can handle images, and the model's choice is deterministic (media → `extendedRead`, text → `read`).
+
+## 12. Edge cases
+
+| Case | Handling |
+|---|---|
+| File not found / not a file / unreadable | clear `isError: true` result with the reason |
+| File exceeds `maxAttachmentBytes` | note + no inline |
+| `ffmpeg` conversion fails | note + no inline (no crash) |
+| Unsupported extension | note naming the extension |
+| `~` in path | expanded to `homedir()` |
+| `ffmpeg.path` missing | graceful: no conversion, note |
+| Model doesn't support modality | note ("Model does not support audio") |
+
+## 13. Cleanup
+
+- `/tmp` is a **working directory, not persistence** — it's where `ffmpeg` writes output before base64-encoding.
+- OS-managed; no ledger to reconcile.
+- The media reaches the server as an inline `image_url`/`input_audio`/`input_video` part; the `/tmp` file is just the conversion artifact.
+
+## 14. Future work
+
+- **Compaction interleave:** shedding stale tool-result media depends on a future pi compaction feature.
+- **PDF support:** extend `extendedRead` to handle PDF files (render pages to images via `pdftoppm` or similar).
+- **Resize options exposure:** whether to let the model control image resize parameters.

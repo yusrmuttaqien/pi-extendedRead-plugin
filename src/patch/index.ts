@@ -10,6 +10,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
 import { createRequire } from "node:module";
 
 import { targets, type PatchTarget } from "./targets.js";
@@ -25,7 +26,7 @@ export function applyPatches(piRoot: string): PatchResult[] {
 
 	for (const target of targets) {
 		try {
-			const filePath = target.file(piRoot);
+			const filePath = join(piRoot, target.file);
 			if (!existsSync(filePath)) {
 				results.push({
 					id: target.id,

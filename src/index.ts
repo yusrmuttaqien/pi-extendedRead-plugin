@@ -5,7 +5,7 @@
  * Also exposes the /media-patch slash command for manual re-apply.
  */
 
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
 
@@ -14,7 +14,7 @@ import { readExtended } from "./readExtended.js";
 import { applyPatches, resolvePiRoot, piVersion } from "./patch/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const pluginDir = __dirname; // dist/ → parent is plugin root
+const pluginDir = join(__dirname, "..", ".."); // dist/src/ → plugin root
 
 export default function activate(pi: any) {
 	const config = loadConfig(pluginDir);

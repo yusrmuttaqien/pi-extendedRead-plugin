@@ -27,6 +27,11 @@ export interface PluginConfig {
 		maxBytes: MaxBytes;
 		executionMode: "parallel" | "sequential";
 		ffmpegTimeoutMs: number;
+		pdf?: {
+			defaultDpi?: number;
+			maxPagesPerCall?: number;
+			maxTextChars?: number;
+		};
 	};
 }
 

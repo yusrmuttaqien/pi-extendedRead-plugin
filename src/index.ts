@@ -49,6 +49,8 @@ export default function activate(pi: ExtensionAPI) {
 		],
 		parameters: Type.Object({
 			path: Type.String({ description: "Path to the file (relative, absolute, or ~)" }),
+			pages: Type.Optional(Type.String({ description: "Page selector for PDFs: '1', '1-5', '3,7,12' (default: '1')" })),
+			mode: Type.Optional(Type.Union([Type.Literal("text"), Type.Literal("image")], { description: "PDF mode: 'text' (default) or 'image'" })),
 		}),
 		executionMode: executionMode(config),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {

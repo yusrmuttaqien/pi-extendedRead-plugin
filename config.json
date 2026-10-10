@@ -15,7 +15,13 @@
       "input": "Same as models.input. Default: ['text', 'image'].",
       "maxBytes": "Same as models.maxBytes.",
       "executionMode": "'parallel' (concurrent reads) or 'sequential'. Default: 'parallel'.",
-      "ffmpegTimeoutMs": "ffmpeg conversion timeout (ms). Default: 30000."
+      "ffmpegTimeoutMs": "ffmpeg conversion timeout (ms). Default: 30000.",
+      "pdf": {
+        "$description": "PDF reading settings.",
+        "defaultDpi": "Resolution for image mode (DPI). Default: 150.",
+        "maxPagesPerCall": "Max pages per tool call. Default: 10.",
+        "maxTextChars": "Max characters per page in text mode. Default: 50000."
+      }
     }
   },
   "models": {},
@@ -27,6 +33,11 @@
       "video": 52428800
     },
     "executionMode": "parallel",
-    "ffmpegTimeoutMs": 30000
+    "ffmpegTimeoutMs": 30000,
+    "pdf": {
+      "defaultDpi": 150,
+      "maxPagesPerCall": 10,
+      "maxTextChars": 50000
+    }
   }
 }

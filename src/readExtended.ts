@@ -103,6 +103,8 @@ function ffmpegConvert(
 
 export interface ExtendedReadParams {
 	path: string;
+	pages?: string;
+	mode?: "text" | "image";
 }
 
 export interface ExtendedReadContext {
@@ -267,10 +269,108 @@ export async function readExtended(
 		}
 	}
 
+	// --- PDF ---
+	if (ext === "pdf") {
+		return readPdf(path, params, config);
+	}
+
 	// --- Unsupported ---
 	return {
 		content: [{ type: "text", text: `[extendedRead: unsupported format ${ext}]` }],
 	};
+}
+
+// --- PDF handling (mupdf WASM) ---
+
+async function readPdf(
+	path: string,
+	params: ExtendedReadParams,
+	config: PluginConfig,
+): Promise<AgentToolResult> {
+	const mupdf = await import("mupdf") as any;
+	const buffer = await readFile(path);
+	const doc = mupdf.Document.openDocument(buffer, "application/pdf");
+	try {
+		const totalPages = doc.countPages();
+		const pageIndices = parsePageSelector(params.pages ?? "1", totalPages);
+		const mode = params.mode ?? "text";
+		const dpi = config.defaults.pdf?.defaultDpi ?? 150;
+		const maxTextChars = config.defaults.pdf?.maxTextChars ?? 50000;
+
+		const blocks: { type: string; text?: string; data?: string; mimeType?: string }[] = [];
+
+		if (mode === "text") {
+			// Text extraction
+			for (const i of pageIndices) {
+				const page = doc.loadPage(i);
+				try {
+					const stext = page.toStructuredText("preserve-whitespace");
+					let text = stext.asText();
+					stext.destroy();
+					if (text.length > maxTextChars) {
+						text = text.slice(0, maxTextChars) + "\n[truncated]";
+					}
+					blocks.push({ type: "text", text: `--- Page ${i + 1} ---\n${text}` });
+				} finally {
+				page.destroy();
+				}
+			}
+			blocks.push({
+				type: "text",
+				text: `PDF: ${totalPages} pages. Read pages ${pageIndices.map((i) => i + 1).join(",")}. Use pages='N-M' for more, mode='image' to view visually.`,
+			});
+		} else {
+			// Image rendering
+			for (const i of pageIndices) {
+				const page = doc.loadPage(i);
+				try {
+					const pixmap = page.toPixmap(
+						mupdf.Matrix.scale(dpi / 72, dpi / 72),
+						mupdf.ColorSpace.DeviceRGB,
+					);
+					try {
+						const png = pixmap.asPNG();
+						blocks.push({
+						type: "text",
+						text: `PDF page ${i + 1} of ${totalPages}`,
+					});
+						blocks.push({
+						type: "image",
+						data: png.toString("base64"),
+						mimeType: "image/png",
+					});
+				} finally {
+					pixmap.destroy();
+				}
+			} finally {
+				page.destroy();
+			}
+		}
+		}
+
+		return { content: blocks };
+	} finally {
+		doc.destroy();
+	}
+}
+
+/** Parse a page selector like "1", "1-5", "3,7,12" into zero-based indices. */
+function parsePageSelector(selector: string, totalPages: number): number[] {
+	const indices: number[] = [];
+	for (const part of selector.split(",")) {
+		const trimmed = part.trim();
+		if (trimmed.includes("-")) {
+			const [start, end] = trimmed.split("-").map((s) => parseInt(s, 10) - 1);
+			for (let i = Math.max(0, start); i < Math.min(totalPages - 1, end); i++) {
+				indices.push(i);
+			}
+		} else {
+			const i = parseInt(trimmed, 10) - 1;
+			if (i >= 0 && i < totalPages) indices.push(i);
+		}
+	}
+	// Deduplicate and sort
+	return [...new Set(indices)].sort((a, b) => a - b);
 }
 
 // --- Image processing (in-memory, no /tmp) ---

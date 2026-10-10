@@ -7,6 +7,7 @@
 
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Type } from "typebox";
 
 import { loadConfig, executionMode } from "./config.js";
 import { readExtended } from "./readExtended.js";
@@ -45,30 +46,36 @@ export default function activate(pi: any) {
 			"Use extendedRead to read media files (images, audio, video) the user references.",
 			"Use the native read tool for text files.",
 		],
-		parameters: {
-			type: "object",
-			properties: {
-				path: {
-					type: "string",
-					description: "Path to the file (relative, absolute, or ~)",
-				},
-			},
-			required: ["path"],
-		},
+		parameters: Type.Object({
+			path: Type.String({ description: "Path to the file (relative, absolute, or ~)" }),
+		}),
 		executionMode: executionMode(config),
-		execute: async (_toolCallId: string, params: { path: string }, _signal: AbortSignal | undefined, _onUpdate: unknown, ctx: any) => {
-			return await readExtended(params, { cwd: ctx.cwd, modelId: ctx.modelId }, config);
+		execute: async (
+			_toolCallId: string,
+			params: { path: string },
+			_signal: AbortSignal | undefined,
+			_onUpdate: unknown,
+			ctx: any,
+		) => {
+			const modelId = ctx.model?.id ?? "unknown";
+			return await readExtended(
+				params,
+				{ cwd: ctx.cwd, modelId },
+				config,
+			);
 		},
 	});
 
 	// Register /media-patch slash command.
-	pi.registerCommand({
-		name: "media-patch",
+	pi.registerCommand("media-patch", {
 		description: "Re-apply pi media patches (after pi updates)",
-		handler: () => {
+		handler: async (_args: string, ctx: any) => {
 			const r = applyPatches(piRoot);
-			const lines = r.map((x) => `  ${x.status}: ${x.id} — ${x.message}`);
-			return `pi-media-patch (pi v${version}):\n${lines.join("\n")}`;
+			const lines = r.map((x: any) => `  ${x.status}: ${x.id} — ${x.message}`);
+			ctx.ui.notify(
+				`pi-media-patch (pi v${version}):\n${lines.join("\n")}`,
+				"info",
+			);
 		},
 	});
 }

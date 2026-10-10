@@ -11,8 +11,9 @@
 
 import { stat, readFile, unlink } from "node:fs/promises";
 import { resolve, extname, join } from "node:path";
-import { homedir } from "node:os";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
+
+import { resolvePiRoot } from "./patch/index.js";
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import ffmpeg from "@ffmpeg-installer/ffmpeg";
@@ -282,8 +283,11 @@ async function processImageBytes(
 ): Promise<{ data: string; mimeType: string; hints?: string[] }> {
 	// pi's processImage: normalize (Photon) → resize (worker) → base64
 	// Returns { ok: true, data, mimeType, hints } or { ok: false, message }.
+	// Use absolute path from pi's install root (not a package name —
+	// the plugin's node_modules doesn't have pi as a dependency).
+	const piRoot = resolvePiRoot();
 	const { processImage } = await import(
-		"@earendil-works/pi-coding-agent/dist/utils/image-process.js"
+		join(piRoot, "dist/utils/image-process.js")
 	) as any;
 	const result = await processImage(bytes, mimeType, {
 		autoResizeImages: true,

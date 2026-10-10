@@ -110,9 +110,7 @@ export interface ExtendedReadContext {
 }
 
 export interface AgentToolResult {
-	content:
-		| string
-		| { type: string; text?: string; data?: string; mimeType?: string }[];
+	content: { type: string; text?: string; data?: string; mimeType?: string }[];
 	details?: unknown;
 	isError?: boolean;
 }
@@ -130,10 +128,16 @@ export async function readExtended(
 	try {
 		const s = await stat(path);
 		if (!s.isFile())
-			return { content: `Not a file: ${path}`, isError: true };
+			return {
+				content: [{ type: "text", text: `Not a file: ${path}` }],
+				isError: true,
+			};
 		size = s.size;
 	} catch {
-		return { content: `File not found: ${path}`, isError: true };
+		return {
+			content: [{ type: "text", text: `File not found: ${path}` }],
+			isError: true,
+		};
 	}
 
 	// 3. Size cap (per-modality)
@@ -142,7 +146,12 @@ export async function readExtended(
 	const modelCfg = resolveModelConfig(config, ctx.modelId);
 	if (modality && size > modelCfg.maxBytes[modality]) {
 		return {
-			content: `File too large (${size} > ${modelCfg.maxBytes[modality]} bytes for ${modality})`,
+			content: [
+				{
+					type: "text",
+					text: `File too large (${size} > ${modelCfg.maxBytes[modality]} bytes for ${modality})`,
+				},
+			],
 		};
 	}
 
@@ -153,7 +162,9 @@ export async function readExtended(
 	// --- Image direct ---
 	if (ext in IMAGE_DIRECT) {
 		if (!input.includes("image"))
-			return { content: "Model does not support images" };
+			return {
+				content: [{ type: "text", text: "Model does not support images" }],
+			};
 		const bytes = await readFile(path);
 		const { data, mimeType } = await processImageBytes(bytes, IMAGE_DIRECT[ext]);
 		return {
@@ -167,7 +178,9 @@ export async function readExtended(
 	// --- Image convertible ---
 	if (ext in IMAGE_CONVERT) {
 		if (!input.includes("image"))
-			return { content: "Model does not support images" };
+			return {
+				content: [{ type: "text", text: "Model does not support images" }],
+			};
 		const tmp = await ffmpegConvert(path, "png", config.defaults.ffmpegTimeoutMs);
 		try {
 			const bytes = await readFile(tmp);
@@ -186,7 +199,9 @@ export async function readExtended(
 	// --- Audio direct ---
 	if (ext in AUDIO_DIRECT) {
 		if (!input.includes("audio"))
-			return { content: "Model does not support audio" };
+			return {
+				content: [{ type: "text", text: "Model does not support audio" }],
+			};
 		const b64 = (await readFile(path)).toString("base64");
 		return {
 			content: [
@@ -199,7 +214,9 @@ export async function readExtended(
 	// --- Audio convertible ---
 	if (ext in AUDIO_CONVERT) {
 		if (!input.includes("audio"))
-			return { content: "Model does not support audio" };
+			return {
+				content: [{ type: "text", text: "Model does not support audio" }],
+			};
 		const tmp = await ffmpegConvert(path, "mp3", config.defaults.ffmpegTimeoutMs);
 		try {
 			const b64 = (await readFile(tmp)).toString("base64");
@@ -217,7 +234,9 @@ export async function readExtended(
 	// --- Video direct ---
 	if (ext in VIDEO_DIRECT) {
 		if (!input.includes("video"))
-			return { content: "Model does not support video" };
+			return {
+				content: [{ type: "text", text: "Model does not support video" }],
+			};
 		const b64 = (await readFile(path)).toString("base64");
 		return {
 			content: [
@@ -230,7 +249,9 @@ export async function readExtended(
 	// --- Video convertible ---
 	if (ext in VIDEO_CONVERT) {
 		if (!input.includes("video"))
-			return { content: "Model does not support video" };
+			return {
+				content: [{ type: "text", text: "Model does not support video" }],
+			};
 		const tmp = await ffmpegConvert(path, "mp4", config.defaults.ffmpegTimeoutMs);
 		try {
 			const b64 = (await readFile(tmp)).toString("base64");
@@ -247,7 +268,7 @@ export async function readExtended(
 
 	// --- Unsupported ---
 	return {
-		content: `[extendedRead: unsupported format ${ext}]`,
+		content: [{ type: "text", text: `[extendedRead: unsupported format ${ext}]` }],
 	};
 }
 

@@ -14,6 +14,11 @@ import { join } from "node:path";
 import { readExtended } from "../src/readExtended.js";
 import type { PluginConfig } from "../src/config.js";
 
+/** Extract text from array content. */
+function text(content: { type: string; text?: string }[]): string {
+	return content.map((c) => c.text ?? "").join("\n");
+}
+
 const config: PluginConfig = {
 	models: {},
 	defaults: {
@@ -31,7 +36,7 @@ test("file not found", async () => {
 		config,
 	);
 	assert.equal(result.isError, true);
-	assert.match(result.content as string, /File not found/);
+	assert.match(text(result.content as any), /File not found/);
 });
 
 test("not a file (directory)", async () => {
@@ -41,7 +46,7 @@ test("not a file (directory)", async () => {
 		config,
 	);
 	assert.equal(result.isError, true);
-	assert.match(result.content as string, /Not a file/);
+	assert.match(text(result.content as any), /Not a file/);
 });
 
 test("unsupported extension", async () => {
@@ -54,7 +59,7 @@ test("unsupported extension", async () => {
 		{ cwd: dir, modelId: "test" },
 		config,
 	);
-	assert.match(result.content as string, /unsupported format/);
+	assert.match(text(result.content as any), /unsupported format/);
 
 	await rm(dir, { recursive: true });
 });
@@ -70,7 +75,7 @@ test("size cap exceeded", async () => {
 		{ cwd: dir, modelId: "test" },
 		config,
 	);
-	assert.match(result.content as string, /File too large/);
+	assert.match(text(result.content as any), /File too large/);
 
 	await rm(dir, { recursive: true });
 });
@@ -90,7 +95,7 @@ test("capability gate: model doesn't support audio", async () => {
 		{ cwd: dir, modelId: "test" },
 		audioConfig,
 	);
-	assert.match(result.content as string, /does not support audio/);
+	assert.match(text(result.content as any), /does not support audio/);
 
 	await rm(dir, { recursive: true });
 });

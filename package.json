@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Pi extension: extendedRead tool for media files (images, audio, video) with native serialization",
   "type": "module",
-  "main": "dist/index.js",
+  "main": "dist/src/index.js",
   "scripts": {
     "build": "tsc",
     "test": "node --test dist/test/*.test.js",

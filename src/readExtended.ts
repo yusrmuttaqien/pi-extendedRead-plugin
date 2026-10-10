@@ -1,12 +1,13 @@
 /**
  * readExtended.ts — extendedRead tool implementation.
  *
- * Model-invoked tool that reads media files (images, audio, video) and returns
- * them as content blocks in the tool result. Mirrors the native `read` tool's
- * flow: resolve → stat → size cap → capability gate → dispatch → return.
+ * Model-invoked tool that reads media files (images, audio, video, PDF) and
+ * returns them as content blocks in the tool result. Mirrors the native `read`
+ * tool's flow: resolve → stat → size cap → capability gate → dispatch → return.
  *
  * Images: in-memory via pi's processImage (Photon WASM + resize worker).
  * Audio/Video: ffmpeg → /tmp → base64. No resize.
+ * PDF: mupdf (WASM) → text extraction or page rendering to PNG.
  */
 
 import { stat, readFile, unlink } from "node:fs/promises";

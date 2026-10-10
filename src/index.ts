@@ -41,10 +41,11 @@ export default function activate(pi: ExtensionAPI) {
 			"Images: png, jpg, jpeg, gif, webp, bmp, heic, heif, tiff, tif, tga, avif. " +
 			"Audio: wav, mp3, flac, ogg, aiff, aif, m4a, aac, wma, opus. " +
 			"Video: mp4, webm, mkv, mov, avi. " +
+			"PDF: text extraction (default) or page rendering to image. Use pages='1-5' for pagination. " +
 			"For text files, use the native read tool.",
 		promptSnippet: "Read media files",
 		promptGuidelines: [
-			"Use extendedRead to read media files (images, audio, video) the user references.",
+			"Use extendedRead to read media files (images, audio, video, PDF) the user references.",
 			"Use the native read tool for text files.",
 		],
 		parameters: Type.Object({

@@ -117,3 +117,60 @@ test("tilde expansion", async () => {
 
 	await rm(dir, { recursive: true });
 });
+
+test("PDF text extraction", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "extread-"));
+	// Minimal valid PDF (1 page, empty).
+	const pdfBytes = Buffer.from(
+		"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n" +
+		"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n" +
+		"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>endobj\n" +
+		"xref\n0 4\n0000000000 65535 f \n" +
+		"0000000009 00000 n \n" +
+		"0000000058 00000 n \n" +
+		"0000000113 00000 n \n" +
+		"trailer<</Size 4/Root 1 0 R>>\nstartxref\n166\n%%EOF\n",
+	);
+	const file = join(dir, "test.pdf");
+	await writeFile(file, pdfBytes);
+
+	const result = await readExtended(
+		{ path: file },
+		{ cwd: dir, modelId: "test" },
+		config,
+	);
+	// Should return text with page count info.
+	const allText = text(result.content as any);
+	assert.match(allText, /1 pages/);
+	assert.match(allText, /Page 1/);
+
+	await rm(dir, { recursive: true });
+});
+
+test("PDF page selector", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "extread-"));
+	const pdfBytes = Buffer.from(
+		"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n" +
+		"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n" +
+		"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>endobj\n" +
+		"xref\n0 4\n0000000000 65535 f \n" +
+		"0000000009 00000 n \n" +
+		"0000000058 00000 n \n" +
+		"0000000113 00000 n \n" +
+		"trailer<</Size 4/Root 1 0 R>>\nstartxref\n166\n%%EOF\n",
+	);
+	const file = join(dir, "test.pdf");
+	await writeFile(file, pdfBytes);
+
+	// Request page 5 (out of range for a 1-page PDF).
+	const result = await readExtended(
+		{ path: file, pages: "5" },
+		{ cwd: dir, modelId: "test" },
+		config,
+	);
+	// Should not crash; out-of-range pages are silently skipped.
+	const allText = text(result.content as any);
+	assert.match(allText, /1 pages/);
+
+	await rm(dir, { recursive: true });
+});

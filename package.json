@@ -10,8 +10,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ffmpeg-installer/ffmpeg": "^1.1.0",
-    "typebox": "^1.1.0"
+    "@ffmpeg-installer/ffmpeg": "^1.1.0"
+  },
+  "peerDependencies": {
+    "typebox": "*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

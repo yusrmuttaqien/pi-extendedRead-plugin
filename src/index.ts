@@ -8,15 +8,16 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import { loadConfig, executionMode } from "./config.js";
 import { readExtended } from "./readExtended.js";
 import { applyPatches, resolvePiRoot, piVersion } from "./patch/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const pluginDir = join(__dirname, "..", ".."); // dist/src/ → plugin root
+const pluginDir = join(__dirname, ".."); // src/ → plugin root
 
-export default function activate(pi: any) {
+export default function activate(pi: ExtensionAPI) {
 	const config = loadConfig(pluginDir);
 
 	// Apply patches on load (idempotent).
@@ -50,28 +51,23 @@ export default function activate(pi: any) {
 			path: Type.String({ description: "Path to the file (relative, absolute, or ~)" }),
 		}),
 		executionMode: executionMode(config),
-		execute: async (
-			_toolCallId: string,
-			params: { path: string },
-			_signal: AbortSignal | undefined,
-			_onUpdate: unknown,
-			ctx: any,
-		) => {
+		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			const modelId = ctx.model?.id ?? "unknown";
-			return await readExtended(
+			// Cast: our result includes audio/video blocks not in pi's type system
+			return (await readExtended(
 				params,
 				{ cwd: ctx.cwd, modelId },
 				config,
-			);
+			)) as any;
 		},
 	});
 
 	// Register /media-patch slash command.
 	pi.registerCommand("media-patch", {
 		description: "Re-apply pi media patches (after pi updates)",
-		handler: async (_args: string, ctx: any) => {
+		handler: async (_args, ctx) => {
 			const r = applyPatches(piRoot);
-			const lines = r.map((x: any) => `  ${x.status}: ${x.id} — ${x.message}`);
+			const lines = r.map((x) => `  ${x.status}: ${x.id} — ${x.message}`);
 			ctx.ui.notify(
 				`pi-media-patch (pi v${version}):\n${lines.join("\n")}`,
 				"info",

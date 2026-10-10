@@ -3,7 +3,11 @@
   "version": "0.1.0",
   "description": "Pi extension: extendedRead tool for media files (images, audio, video) with native serialization",
   "type": "module",
-  "main": "dist/src/index.js",
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
   "scripts": {
     "build": "tsc",
     "postinstall": "npm run build",
@@ -17,6 +21,7 @@
     "typebox": "*"
   },
   "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^1.1.0",
     "@types/node": "^22.0.0",
     "typescript": "^5.5.0"
   }

@@ -5,8 +5,9 @@
  * Exposes model capabilities and tuning knobs to the tool and patch modules.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { homedir } from "node:os";
 
 export interface MaxBytes {
 	image: number;
@@ -31,9 +32,31 @@ export interface PluginConfig {
 
 let cached: PluginConfig | undefined;
 
+/** User-owned config location (survives pi updates). */
+function userConfigPath(): string {
+	return join(homedir(), ".pi", "agent", "extensions", "pi-extendedread", "config.json");
+}
+
 export function loadConfig(pluginDir: string): PluginConfig {
 	if (cached) return cached;
-	const raw = readFileSync(join(pluginDir, "config.json"), "utf-8");
+
+	const userPath = userConfigPath();
+
+	// First run: generate config from the plugin's default.
+	if (!existsSync(userPath)) {
+		const defaultPath = join(pluginDir, "config.json");
+		if (existsSync(defaultPath)) {
+			mkdirSync(join(homedir(), ".pi", "agent", "extensions", "pi-extendedread"), { recursive: true });
+			writeFileSync(userPath, readFileSync(defaultPath, "utf-8"));
+		}
+	}
+
+	if (!existsSync(userPath)) {
+		cached = JSON.parse(readFileSync(join(pluginDir, "config.json"), "utf-8")) as PluginConfig;
+		return cached;
+	}
+
+	const raw = readFileSync(userPath, "utf-8");
 	cached = JSON.parse(raw) as PluginConfig;
 	return cached;
 }

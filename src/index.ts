@@ -2,11 +2,14 @@
  * index.ts — plugin entry point.
  *
  * Registers the extendedRead tool and applies pi patches on activation.
- * Also exposes the /media-patch slash command for manual re-apply.
+ * Exposes slash commands:
+ *   /extended-read-patch — re-apply pi patches (after pi updates)
+ *   /extended-read-config — regenerate config.json (backs up existing as .1, .2, …)
  */
 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { existsSync, copyFileSync, writeFileSync } from "node:fs";
 import { Type } from "typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
@@ -66,14 +69,43 @@ export default function activate(pi: ExtensionAPI) {
 		},
 	});
 
-	// Register /media-patch slash command.
-	pi.registerCommand("media-patch", {
-		description: "Re-apply pi media patches (after pi updates)",
+	// Register /extended-read-patch slash command.
+	pi.registerCommand("extended-read-patch", {
+		description: "Re-apply pi patches (after pi updates)",
 		handler: async (_args, ctx) => {
 			const r = applyPatches(piRoot);
 			const lines = r.map((x) => `  ${x.status}: ${x.id} — ${x.message}`);
 			ctx.ui.notify(
-				`pi-media-patch (pi v${version}):\n${lines.join("\n")}`,
+				`extended-read-patch (pi v${version}):\n${lines.join("\n")}`,
+				"info",
+		);
+		},
+	});
+
+	// Register /extended-read-config slash command.
+	pi.registerCommand("extended-read-config", {
+		description: "Regenerate config.json (backs up existing as .1, .2, …)",
+		handler: async (_args, ctx) => {
+			const { userConfigPath } = await import("./config.js");
+			const configPath = userConfigPath();
+
+			if (existsSync(configPath)) {
+				// Find next available backup number
+				let n = 1;
+				while (existsSync(`${configPath}.${n}`)) n++;
+				copyFileSync(configPath, `${configPath}.${n}`);
+				ctx.ui.notify(
+				`Config backed up to config.json.${n}\nRegenerating…`,
+				"info",
+			);
+			} else {
+				ctx.ui.notify("No existing config. Generating…", "info");
+			}
+
+			// Copy from plugin default
+			copyFileSync(join(pluginDir, "config.json"), configPath);
+			ctx.ui.notify(
+				`Config regenerated at ${configPath}`,
 				"info",
 			);
 		},

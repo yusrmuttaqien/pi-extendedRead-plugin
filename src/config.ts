@@ -37,7 +37,7 @@ export interface PluginConfig {
 let cached: PluginConfig | undefined;
 
 /** User-owned config location (survives pi updates). */
-function userConfigPath(): string {
+export function userConfigPath(): string {
 	return join(homedir(), ".pi", "agent", "extensions", "pi-extendedread", "config.json");
 }
 

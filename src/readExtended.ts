@@ -10,7 +10,7 @@
  * PDF: mupdf (WASM) → text extraction or page rendering to PNG.
  */
 
-import { stat, readFile, unlink } from "node:fs/promises";
+import { stat, readFile, unlink, mkdtemp, rm } from "node:fs/promises";
 import { resolve, extname, join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 
@@ -275,6 +275,11 @@ export async function readExtended(
 		return readPdf(path, params, config, input);
 	}
 
+	// --- PPTX (convert to PDF via LibreOffice) ---
+	if (ext === "pptx") {
+		return readPptx(path, params, config, input);
+	}
+
 	// --- Unsupported ---
 	return {
 		content: [{ type: "text", text: `[extendedRead: unsupported format ${ext}]` }],
@@ -387,6 +392,56 @@ function parsePageSelector(selector: string, totalPages: number): number[] {
 	}
 	// Deduplicate and sort
 	return [...new Set(indices)].sort((a, b) => a - b);
+}
+
+// --- PPTX handling (convert to PDF via LibreOffice, then use PDF pipeline) ---
+
+async function readPptx(
+	path: string,
+	params: ExtendedReadParams,
+	config: PluginConfig,
+	input: string[],
+): Promise<AgentToolResult> {
+	// Find soffice (LibreOffice)
+	const { execFileSync } = await import("node:child_process");
+	let sofficePath: string;
+	try {
+		sofficePath = execFileSync("which", ["soffice"], { encoding: "utf-8" }).trim();
+	} catch {
+		return {
+			content: [
+				{
+					type: "text",
+					text: "[extendedRead: PPTX requires LibreOffice (soffice) to be installed. Install it and try again.]",
+				},
+			],
+		};
+	}
+
+	// Convert to PDF in a temp directory
+	const tmpDir = await mkdtemp(join(tmpdir(), "pi-pptx-"));
+	const baseName = path.replace(/\.pptx$/i, "");
+	const outDir = join(tmpDir, "out");
+	try {
+		await execFile(
+			sofficePath,
+			["--headless", "--convert-to", "pdf", "--outdir", outDir, path],
+			{ timeout: 30000 },
+		);
+		const pdfPath = join(outDir, `${baseName.split("/").pop()}.pdf`);
+		return await readPdf(pdfPath, params, config, input);
+	} catch (e: any) {
+		return {
+			content: [
+				{
+					type: "text",
+					text: `[extendedRead: PPTX conversion failed: ${e.message}]`,
+				},
+			],
+		};
+	} finally {
+		await rm(tmpDir, { recursive: true }).catch(() => {});
+	}
 }
 
 // --- Image processing (in-memory, no /tmp) ---

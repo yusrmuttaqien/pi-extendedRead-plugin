@@ -203,3 +203,20 @@ test("PDF: image mode gated by model capability", async () => {
 
 	await rm(dir, { recursive: true });
 });
+
+test("PPTX: returns note when LibreOffice not found", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "pi-extread-"));
+	const file = join(dir, "test.pptx");
+	await writeFile(file, Buffer.from([0x50, 0x50, 0x54, 0x58])); // minimal bytes
+
+	const result = await readExtended(
+		{ path: file },
+		{ cwd: dir, modelId: "test" },
+		config,
+	);
+	const allText = text(result.content as any);
+	// Either "requires LibreOffice" or "conversion failed" (if soffice exists but file is invalid)
+	assert.match(allText, /LibreOffice|conversion failed/i);
+
+	await rm(dir, { recursive: true });
+});

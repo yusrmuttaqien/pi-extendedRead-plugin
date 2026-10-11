@@ -180,6 +180,7 @@ Mirrors native `read`'s flow: resolve → stat → detect → process → return
 | Image | png, jpg, jpeg, gif, webp, bmp | heic, heif, tiff, tif, tga, avif → **png** |
 | Audio | wav, mp3, flac, ogg, aiff, aif | m4a, aac, wma, opus → **mp3** |
 | Video | mp4 | webm, mkv, mov, avi → **mp4** |
+| PPTX | — | pptx → **pdf** (via LibreOffice) |
 
 ### Image pipeline (in-memory, no `/tmp`, resize)
 - Reuse pi's `processImage(bytes, mimeType, { autoResizeImages: true, resizeOptions })` (`dist/utils/image-process.js`).
@@ -192,6 +193,13 @@ Mirrors native `read`'s flow: resolve → stat → detect → process → return
 - Output to `os.tmpdir()` as `pi-media-<pid>-<uuid>.<ext>`.
 - base64-encode the temp file bytes.
 - **Cleanup:** OS-managed. No ledger.
+
+### PPTX pipeline (LibreOffice → PDF → mupdf)
+- **Library:** `soffice` (LibreOffice) CLI, headless mode.
+- **Flow:** `soffice --headless --convert-to pdf --outdir <tmp> <input.pptx>` → temp PDF → `readPdf`.
+- **Requirement:** LibreOffice must be installed. If not found, returns a note.
+- **Timeout:** 30s for conversion.
+- **Cleanup:** temp directory removed in `finally`.
 
 ### PDF pipeline (mupdf WASM, in-memory)
 - **Library:** `mupdf` npm package (MuPDF C engine in WebAssembly). ESM, zero native deps, AGPL.
@@ -290,6 +298,7 @@ pi-extendedread-plugin/
 | Audio | no | yes |
 | Video | no | yes |
 | PDF | no | yes (text extraction + visual rendering, pagination) |
+| PPTX | no | yes (converts to PDF via LibreOffice) |
 | Resize | in-memory (Photon) | in-memory (reuse Photon) |
 | Serialization | pi's `convertMessages` (native) | pi's `convertMessages` (patched) |
 | Trigger | model calls `read` | model calls `extendedRead` |

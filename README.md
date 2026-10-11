@@ -7,6 +7,7 @@ Complements pi's native `read` tool (text + basic images) by adding:
 - Audio (wav, mp3, flac, ogg, aiff, aif, m4a, aac, wma, opus)
 - Video (mp4, webm, mkv, mov, avi)
 - **PDF** (text extraction + visual page rendering, with pagination)
+- **PPTX** (converts to PDF via LibreOffice, then uses the PDF pipeline)
 
 ## How it works
 
@@ -18,6 +19,7 @@ The model calls `extendedRead` with a file path. The tool:
    - **Images:** in-memory via pi's Photon/resize pipeline (no temp file).
    - **Audio/Video:** ffmpeg → `/tmp` → base64 (converted to png/mp3/mp4 if needed).
    - **PDF:** mupdf (WASM) → text extraction or page rendering to PNG.
+   - **PPTX:** LibreOffice → PDF → mupdf pipeline.
 5. Returns content blocks (`image`/`audio`/`video`/`text`) in the tool result.
 
 pi's `convertMessages` serializes these blocks into the provider payload (`image_url`/`input_audio`/`input_video`). This requires a **patch** to pi's provider bundle and compaction — applied automatically on plugin load.

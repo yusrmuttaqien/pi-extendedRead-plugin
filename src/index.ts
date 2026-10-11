@@ -42,6 +42,7 @@ export default function activate(pi: ExtensionAPI) {
 			"Audio: wav, mp3, flac, ogg, aiff, aif, m4a, aac, wma, opus. " +
 			"Video: mp4, webm, mkv, mov, avi. " +
 			"PDF: text extraction (default) or page rendering to image. Use pages='1-5' for pagination. " +
+			"PPTX: converts to PDF via LibreOffice, then uses the PDF pipeline. " +
 			"For text files, use the native read tool.",
 		promptSnippet: "Read media files",
 		promptGuidelines: [

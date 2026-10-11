@@ -272,7 +272,7 @@ export async function readExtended(
 
 	// --- PDF ---
 	if (ext === "pdf") {
-		return readPdf(path, params, config);
+		return readPdf(path, params, config, input);
 	}
 
 	// --- Unsupported ---
@@ -287,6 +287,7 @@ async function readPdf(
 	path: string,
 	params: ExtendedReadParams,
 	config: PluginConfig,
+	input: string[],
 ): Promise<AgentToolResult> {
 	const mupdf = await import("mupdf") as any;
 	const buffer = await readFile(path);
@@ -300,6 +301,12 @@ async function readPdf(
 		}
 		const mode = params.mode ?? "text";
 		const dpi = config.defaults.pdf?.defaultDpi ?? 150;
+
+		if (mode === "image" && !input.includes("image")) {
+			return {
+				content: [{ type: "text", text: "Model does not support images (required for PDF image mode)" }],
+			};
+		}
 
 		const blocks: { type: string; text?: string; data?: string; mimeType?: string }[] = [];
 

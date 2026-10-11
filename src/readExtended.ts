@@ -275,7 +275,7 @@ export async function readExtended(
 		return readPdf(path, params, config, input);
 	}
 
-	// --- PPTX (convert to PDF via LibreOffice) ---
+	// --- PPTX (convert to PDF via @s8fy/pptx-converter) ---
 	if (ext === "pptx") {
 		return readPptx(path, params, config, input);
 	}

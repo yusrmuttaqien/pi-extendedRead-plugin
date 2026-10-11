@@ -198,10 +198,6 @@ Mirrors native `read`'s flow: resolve → stat → detect → process → return
 - **Library:** `@s8fy/pptx-converter` (in-process WASM engine).
 - **Flow:** `pptxToPdf(buffer)` → PDF Buffer → temp file → `readPdf`.
 - **License:** PolyForm-Noncommercial. Free tier adds a demo watermark to PDF output (cosmetic, doesn't affect model comprehension).
-  - macOS: `brew install --cask libreoffice`
-  - Linux: `sudo apt install libreoffice` (Debian/Ubuntu), `sudo dnf install libreoffice` (Fedora)
-  - Windows: Download from libreoffice.org
-- **Timeout:** 30s for conversion.
 - **Cleanup:** temp directory removed in `finally`.
 
 ### PDF pipeline (mupdf WASM, in-memory)

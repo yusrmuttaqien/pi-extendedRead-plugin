@@ -204,7 +204,7 @@ test("PDF: image mode gated by model capability", async () => {
 	await rm(dir, { recursive: true });
 });
 
-test("PPTX: returns note when LibreOffice not found", async () => {
+test("PPTX: returns conversion failed for invalid file", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "pi-extread-"));
 	const file = join(dir, "test.pptx");
 	await writeFile(file, Buffer.from([0x50, 0x50, 0x54, 0x58])); // minimal bytes
@@ -215,8 +215,8 @@ test("PPTX: returns note when LibreOffice not found", async () => {
 		config,
 	);
 	const allText = text(result.content as any);
-	// Either "requires LibreOffice" or "conversion failed" (if soffice exists but file is invalid)
-	assert.match(allText, /LibreOffice|conversion failed/i);
+	// Should return "conversion failed" since the file is not a valid PPTX
+	assert.match(allText, /conversion failed/i);
 
 	await rm(dir, { recursive: true });
 });

@@ -311,7 +311,11 @@ async function readPdf(
 					const stext = page.toStructuredText("preserve-whitespace");
 					const text = stext.asText();
 					stext.destroy();
-					blocks.push({ type: "text", text: `--- Page ${i + 1} ---\n${text}` });
+					if (text.trim().length === 0) {
+						blocks.push({ type: "text", text: `--- Page ${i + 1} ---\n[no text on this page — use mode='image' to view]` });
+					} else {
+						blocks.push({ type: "text", text: `--- Page ${i + 1} ---\n${text}` });
+					}
 				} finally {
 				page.destroy();
 				}

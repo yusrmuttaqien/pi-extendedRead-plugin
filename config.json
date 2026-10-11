@@ -7,7 +7,8 @@
         "$description": "Per-modality size caps (bytes). Larger files return a note.",
         "image": "Default: 10485760 (10 MB).",
         "audio": "Default: 20971520 (20 MB).",
-        "video": "Default: 52428800 (50 MB)."
+        "video": "Default: 52428800 (50 MB).",
+        "pdf": "Default: 52428800 (50 MB)."
       }
     },
     "defaults": {
@@ -19,8 +20,7 @@
       "pdf": {
         "$description": "PDF reading settings.",
         "defaultDpi": "Resolution for image mode (DPI). Default: 150.",
-        "maxPagesPerCall": "Max pages per tool call. Default: 10.",
-        "maxTextChars": "Max characters per page in text mode. Default: 50000."
+        "maxPagesPerCall": "Max pages per tool call. Default: 10."
       }
     }
   },
@@ -30,14 +30,14 @@
     "maxBytes": {
       "image": 10485760,
       "audio": 20971520,
-      "video": 52428800
+      "video": 52428800,
+      "pdf": 52428800
     },
     "executionMode": "parallel",
     "ffmpegTimeoutMs": 30000,
     "pdf": {
       "defaultDpi": 150,
-      "maxPagesPerCall": 10,
-      "maxTextChars": 50000
+      "maxPagesPerCall": 10
     }
   }
 }

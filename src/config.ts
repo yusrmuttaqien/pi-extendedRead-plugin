@@ -13,6 +13,7 @@ export interface MaxBytes {
 	image: number;
 	audio: number;
 	video: number;
+	pdf: number;
 }
 
 export interface ModelConfig {
@@ -30,7 +31,6 @@ export interface PluginConfig {
 		pdf?: {
 			defaultDpi?: number;
 			maxPagesPerCall?: number;
-			maxTextChars?: number;
 		};
 	};
 }
@@ -78,6 +78,7 @@ export function resolveModelConfig(
 			image: model?.maxBytes?.image ?? config.defaults.maxBytes.image,
 			audio: model?.maxBytes?.audio ?? config.defaults.maxBytes.audio,
 			video: model?.maxBytes?.video ?? config.defaults.maxBytes.video,
+			pdf: model?.maxBytes?.pdf ?? config.defaults.maxBytes.pdf,
 		},
 	};
 }

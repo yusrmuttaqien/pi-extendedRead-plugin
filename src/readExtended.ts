@@ -293,10 +293,13 @@ async function readPdf(
 	const doc = mupdf.Document.openDocument(buffer, "application/pdf");
 	try {
 		const totalPages = doc.countPages();
-		const pageIndices = parsePageSelector(params.pages ?? "1", totalPages);
+		const maxPages = config.defaults.pdf?.maxPagesPerCall ?? 10;
+		let pageIndices = parsePageSelector(params.pages ?? "1", totalPages);
+		if (pageIndices.length > maxPages) {
+			pageIndices = pageIndices.slice(0, maxPages);
+		}
 		const mode = params.mode ?? "text";
 		const dpi = config.defaults.pdf?.defaultDpi ?? 150;
-		const maxTextChars = config.defaults.pdf?.maxTextChars ?? 50000;
 
 		const blocks: { type: string; text?: string; data?: string; mimeType?: string }[] = [];
 
@@ -306,11 +309,8 @@ async function readPdf(
 				const page = doc.loadPage(i);
 				try {
 					const stext = page.toStructuredText("preserve-whitespace");
-					let text = stext.asText();
+					const text = stext.asText();
 					stext.destroy();
-					if (text.length > maxTextChars) {
-						text = text.slice(0, maxTextChars) + "\n[truncated]";
-					}
 					blocks.push({ type: "text", text: `--- Page ${i + 1} ---\n${text}` });
 				} finally {
 				page.destroy();

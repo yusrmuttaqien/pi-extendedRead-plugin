@@ -351,6 +351,10 @@ async function readPdf(
 				page.destroy();
 			}
 		}
+			blocks.push({
+				type: "text",
+				text: `PDF: ${totalPages} pages. Read pages ${pageIndices.map((i) => i + 1).join(",")}. Use pages='N-M' for more.`,
+			});
 		}
 
 		return { content: blocks };

@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@s8fy/pptx-converter": "^1.5.3",
     "mupdf": "^1.28.1"
   },
   "peerDependencies": {

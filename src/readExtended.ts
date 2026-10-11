@@ -10,7 +10,7 @@
  * PDF: mupdf (WASM) → text extraction or page rendering to PNG.
  */
 
-import { stat, readFile, unlink, mkdtemp, rm } from "node:fs/promises";
+import { stat, readFile, unlink, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { resolve, extname, join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 
@@ -394,7 +394,7 @@ function parsePageSelector(selector: string, totalPages: number): number[] {
 	return [...new Set(indices)].sort((a, b) => a - b);
 }
 
-// --- PPTX handling (convert to PDF via LibreOffice, then use PDF pipeline) ---
+// --- PPTX handling (convert to PDF via @s8fy/pptx-converter, then use PDF pipeline) ---
 
 async function readPptx(
 	path: string,
@@ -402,39 +402,19 @@ async function readPptx(
 	config: PluginConfig,
 	input: string[],
 ): Promise<AgentToolResult> {
-	// Find soffice (LibreOffice)
-	const { execFileSync } = await import("node:child_process");
-	let sofficePath: string;
+	const { pptxToPdf } = await import("@s8fy/pptx-converter");
 	try {
-		sofficePath = execFileSync("which", ["soffice"], { encoding: "utf-8" }).trim();
-	} catch {
-		return {
-			content: [
-				{
-					type: "text",
-					text: "[extendedRead: PPTX requires LibreOffice (soffice) to be installed. Install it and try again.]",
-				},
-			],
-		};
-	}
-
-	// Convert to PDF in a temp directory
-	const tmpDir = await mkdtemp(join(tmpdir(), "pi-pptx-"));
-	const baseName = path.replace(/\.pptx$/i, "");
-	try {
-		await execFile(
-			sofficePath,
-			[
-				"-env:UserInstallation=file://" + tmpDir,
-				"--headless",
-				"--convert-to", "pdf",
-				"--outdir", tmpDir,
-				path,
-			],
-			{ timeout: 30000 },
-		);
-		const pdfPath = join(tmpDir, `${baseName.split("/").pop()}.pdf`);
-		return await readPdf(pdfPath, params, config, input);
+		const pptxBuffer = await readFile(path);
+		const result = await pptxToPdf(pptxBuffer);
+		// Write PDF to temp file for readPdf
+		const tmpDir = await mkdtemp(join(tmpdir(), "pi-pptx-"));
+		const pdfPath = join(tmpDir, "converted.pdf");
+		await writeFile(pdfPath, result.data);
+		try {
+			return await readPdf(pdfPath, params, config, input);
+		} finally {
+			await rm(tmpDir, { recursive: true }).catch(() => {});
+		}
 	} catch (e: any) {
 		return {
 			content: [
@@ -444,8 +424,6 @@ async function readPptx(
 				},
 			],
 		};
-	} finally {
-		await rm(tmpDir, { recursive: true }).catch(() => {});
 	}
 }
 

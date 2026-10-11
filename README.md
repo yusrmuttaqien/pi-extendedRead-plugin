@@ -62,8 +62,7 @@ Config is generated to `~/.pi/agent/extensions/pi-extendedread/config.json` on f
     "ffmpegTimeoutMs": 30000,
     "pdf": {
       "defaultDpi": 150,
-      "maxPagesPerCall": 10,
-      "maxTextChars": 50000
+      "maxPagesPerCall": 10
     }
   }
 }

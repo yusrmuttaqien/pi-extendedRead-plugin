@@ -92,10 +92,11 @@ defineTool({
     "Images: png, jpg, jpeg, gif, webp, bmp, heic, heif, tiff, tif, tga, avif. " +
     "Audio: wav, mp3, flac, ogg, aiff, aif, m4a, aac, wma, opus. " +
     "Video: mp4, webm, mkv, mov, avi. " +
+    "PDF: text extraction (default) or page rendering to image. Use pages='1-5' for pagination. " +
     "For text files, use the native read tool.",
   promptSnippet: "Read media files",
   promptGuidelines: [
-    "Use extendedRead to read media files (images, audio, video) the user references.",
+    "Use extendedRead to read media files (images, audio, video, PDF) the user references.",
     "Use the native read tool for text files.",
   ],
   parameters: Type.Object({
@@ -198,7 +199,7 @@ Mirrors native `read`'s flow: resolve → stat → detect → process → return
 - **Image mode**: `page.toPixmap(Matrix.scale(dpi/72, dpi/72), ColorSpace.DeviceRGB).asPNG()` per page. For visual escalation.
 - **Pagination:** `pages` param accepts `"1"`, `"1-5"`, `"3,7,12"`. Default: page 1. Response includes total page count so the model can navigate.
 - **Memory:** mupdf uses WASM memory (not GC'd). All objects (`doc`, `page`, `pixmap`, `stext`) must be `.destroy()`'d in `finally` blocks.
-- **Config:** `pdf.defaultDpi` (150), `pdf.maxPagesPerCall` (10), `pdf.maxTextChars` (50000).
+- **Config:** `pdf.defaultDpi` (150), `pdf.maxPagesPerCall` (10).
 
 ## 7. Wire format & serialization
 
@@ -251,17 +252,15 @@ The native mechanism for audio/video requires a patch to pi's provider bundle, c
 ## 9. Plugin structure
 
 ```
-pi-media-plugin/
+pi-extendedread-plugin/
   src/
     index.ts            — plugin entry: registerTool + activate (apply patches, load config)
     readExtended.ts     — tool implementation (§5 sketch)
     config.ts           — loads config.json, exposes model capabilities + knobs
+    types.d.ts          — ambient module declarations for pi's dist exports
     patch/
       index.ts          — locate files, apply all targets, register /media-patch
       targets.ts        — PatchTarget definitions (anchor, replace, sentinel)
-      convertMessages.ts
-      compaction.ts
-      types.ts
   config.json           — user-editable (self-documenting, §3)
   PATCHES.md            — maintenance doc: table of targets, anchors, sentinels
   test/
@@ -299,7 +298,7 @@ pi-media-plugin/
 
 **Coexist, not replace.** The two tools are complementary:
 - `read` → text files (and images, if the model prefers).
-- `extendedRead` → media files (images, audio, video).
+- `extendedRead` → media files (images, audio, video, PDF).
 
 The model picks the tool based on file type. There's no conflict: both can handle images, and the model's choice is deterministic (media → `extendedRead`, text → `read`).
 
@@ -308,7 +307,7 @@ The model picks the tool based on file type. There's no conflict: both can handl
 | Case | Handling |
 |---|---|
 | File not found / not a file / unreadable | clear `isError: true` result with the reason |
-| File exceeds `maxAttachmentBytes` | note + no inline |
+| File exceeds `maxBytes` (per-modality) | note + no inline |
 | `ffmpeg` conversion fails | note + no inline (no crash) |
 | Unsupported extension | note naming the extension |
 | `~` in path | expanded to `homedir()` |
@@ -316,7 +315,8 @@ The model picks the tool based on file type. There's no conflict: both can handl
 | Model doesn't support modality | note ("Model does not support audio") |
 | PDF: page out of range | silently skipped (no error) |
 | PDF: empty page selector | defaults to page 1 |
-| PDF: text exceeds `maxTextChars` | truncated with `[truncated]` marker |
+| PDF: page has no text | hint: "[no text on this page — use mode='image' to view]" |
+| PDF: pages exceed `maxPagesPerCall` | silently sliced to max |
 
 ## 13. Cleanup
 
@@ -328,5 +328,6 @@ The model picks the tool based on file type. There's no conflict: both can handl
 
 - **Compaction interleave:** shedding stale tool-result media depends on a future pi compaction feature.
 - **Resize options exposure:** whether to let the model control image resize parameters.
+- **PDF: expose DPI as model parameter** — let the model request higher resolution (e.g., 300 DPI) for pages with small text or fine details.
 - **PDF: table of contents** — extract and return the PDF outline/TOC for navigation.
 - **PDF: text search** — `mupdf` supports `page.search(needle)`; expose as a tool parameter.

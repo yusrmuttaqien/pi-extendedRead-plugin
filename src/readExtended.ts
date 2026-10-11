@@ -334,7 +334,7 @@ async function readPdf(
 						mupdf.ColorSpace.DeviceRGB,
 					);
 					try {
-						const png = pixmap.asPNG();
+						const png = Buffer.from(pixmap.asPNG());
 						blocks.push({
 						type: "text",
 						text: `PDF page ${i + 1} of ${totalPages}`,

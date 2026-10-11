@@ -424,7 +424,13 @@ async function readPptx(
 	try {
 		await execFile(
 			sofficePath,
-			["--headless", "--convert-to", "pdf", "--outdir", tmpDir, path],
+			[
+				"-env:UserInstallation=file://" + tmpDir,
+				"--headless",
+				"--convert-to", "pdf",
+				"--outdir", tmpDir,
+				path,
+			],
 			{ timeout: 30000 },
 		);
 		const pdfPath = join(tmpDir, `${baseName.split("/").pop()}.pdf`);

@@ -23,7 +23,7 @@ const config: PluginConfig = {
 	models: {},
 	defaults: {
 		input: ["text", "image", "audio", "video"],
-		maxBytes: { image: 10485760, audio: 20971520, video: 52428800, pdf: 52428800 },
+		maxBytes: { image: 10485760, audio: 20971520, video: 52428800 },
 		executionMode: "parallel",
 		ffmpegTimeoutMs: 30000,
 	},

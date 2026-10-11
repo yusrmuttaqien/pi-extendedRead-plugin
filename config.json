@@ -7,8 +7,7 @@
         "$description": "Per-modality size caps (bytes). Larger files return a note.",
         "image": "Default: 10485760 (10 MB).",
         "audio": "Default: 20971520 (20 MB).",
-        "video": "Default: 52428800 (50 MB).",
-        "pdf": "Default: 52428800 (50 MB)."
+        "video": "Default: 52428800 (50 MB)."
       }
     },
     "defaults": {
@@ -30,8 +29,7 @@
     "maxBytes": {
       "image": 10485760,
       "audio": 20971520,
-      "video": 52428800,
-      "pdf": 52428800
+      "video": 52428800
     },
     "executionMode": "parallel",
     "ffmpegTimeoutMs": 30000,

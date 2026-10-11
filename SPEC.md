@@ -180,7 +180,7 @@ Mirrors native `read`'s flow: resolve → stat → detect → process → return
 | Image | png, jpg, jpeg, gif, webp, bmp | heic, heif, tiff, tif, tga, avif → **png** |
 | Audio | wav, mp3, flac, ogg, aiff, aif | m4a, aac, wma, opus → **mp3** |
 | Video | mp4 | webm, mkv, mov, avi → **mp4** |
-| PPTX | — | pptx → **pdf** (via LibreOffice) |
+| PPTX | — | pptx → **pdf** (via @s8fy/pptx-converter) |
 
 ### Image pipeline (in-memory, no `/tmp`, resize)
 - Reuse pi's `processImage(bytes, mimeType, { autoResizeImages: true, resizeOptions })` (`dist/utils/image-process.js`).
@@ -194,10 +194,10 @@ Mirrors native `read`'s flow: resolve → stat → detect → process → return
 - base64-encode the temp file bytes.
 - **Cleanup:** OS-managed. No ledger.
 
-### PPTX pipeline (LibreOffice → PDF → mupdf)
-- **Library:** `soffice` (LibreOffice) CLI, headless mode.
-- **Flow:** `soffice --headless --convert-to pdf --outdir <tmp> <input.pptx>` → temp PDF → `readPdf`.
-- **Requirement:** LibreOffice must be installed (`soffice` on PATH). If not found, returns a note.
+### PPTX pipeline (@s8fy/pptx-converter → PDF → mupdf)
+- **Library:** `@s8fy/pptx-converter` (in-process WASM engine).
+- **Flow:** `pptxToPdf(buffer)` → PDF Buffer → temp file → `readPdf`.
+- **License:** PolyForm-Noncommercial. Free tier adds a demo watermark to PDF output (cosmetic, doesn't affect model comprehension).
   - macOS: `brew install --cask libreoffice`
   - Linux: `sudo apt install libreoffice` (Debian/Ubuntu), `sudo dnf install libreoffice` (Fedora)
   - Windows: Download from libreoffice.org
@@ -301,7 +301,7 @@ pi-extendedread-plugin/
 | Audio | no | yes |
 | Video | no | yes |
 | PDF | no | yes (text extraction + visual rendering, pagination) |
-| PPTX | no | yes (converts to PDF via LibreOffice) |
+| PPTX | no | yes (converts to PDF via @s8fy/pptx-converter) |
 | Resize | in-memory (Photon) | in-memory (reuse Photon) |
 | Serialization | pi's `convertMessages` (native) | pi's `convertMessages` (patched) |
 | Trigger | model calls `read` | model calls `extendedRead` |

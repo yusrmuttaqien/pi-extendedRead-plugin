@@ -5,7 +5,7 @@
  * Exposes slash commands:
  *   /extended-read-patch — re-apply pi patches (after pi updates)
  *   /extended-read-config — regenerate config.json (backs up existing as .1, .2, …)
- *   /extended-read-libreoffice — show how to install LibreOffice (for PPTX support)
+
  */
 
 import { dirname, join } from "node:path";
@@ -46,7 +46,7 @@ export default function activate(pi: ExtensionAPI) {
 			"Audio: wav, mp3, flac, ogg, aiff, aif, m4a, aac, wma, opus. " +
 			"Video: mp4, webm, mkv, mov, avi. " +
 			"PDF: text extraction (default) or page rendering to image. Use pages='1-5' for pagination. " +
-			"PPTX: converts to PDF via LibreOffice, then uses the PDF pipeline. " +
+			"PPTX: converts to PDF via @s8fy/pptx-converter, then uses the PDF pipeline. " +
 			"For text files, use the native read tool.",
 		promptSnippet: "Read media files",
 		promptGuidelines: [
@@ -83,24 +83,7 @@ export default function activate(pi: ExtensionAPI) {
 		},
 	});
 
-	// Register /extended-read-libreoffice slash command.
-	pi.registerCommand("extended-read-libreoffice", {
-		description: "Show how to install LibreOffice (for PPTX support)",
-		handler: async (_args, ctx) => {
-			const info = [
-				"LibreOffice is required for PPTX support.",
-				"",
-				"Install:",
-				"  macOS:  brew install --cask libreoffice",
-				"  Linux (Debian/Ubuntu):  sudo apt install libreoffice",
-				"  Linux (Fedora):  sudo dnf install libreoffice",
-				"  Windows:  Download from https://www.libreoffice.org",
-				"",
-				"Verify:  which soffice  (macOS/Linux)  or  where soffice  (Windows)",
-			].join("\n");
-			ctx.ui.notify(info, "info");
-		},
-	});
+	
 
 	// Register /extended-read-config slash command.
 	pi.registerCommand("extended-read-config", {

@@ -7,7 +7,7 @@ Complements pi's native `read` tool (text + basic images) by adding:
 - Audio (wav, mp3, flac, ogg, aiff, aif, m4a, aac, wma, opus)
 - Video (mp4, webm, mkv, mov, avi)
 - **PDF** (text extraction + visual page rendering, with pagination)
-- **PPTX** (converts to PDF via LibreOffice, then uses the PDF pipeline)
+- **PPTX** (converts to PDF via @s8fy/pptx-converter, then uses the PDF pipeline)
 
 ## How it works
 
@@ -19,7 +19,7 @@ The model calls `extendedRead` with a file path. The tool:
    - **Images:** in-memory via pi's Photon/resize pipeline (no temp file).
    - **Audio/Video:** ffmpeg → `/tmp` → base64 (converted to png/mp3/mp4 if needed).
    - **PDF:** mupdf (WASM) → text extraction or page rendering to PNG.
-   - **PPTX:** LibreOffice → PDF → mupdf pipeline (requires LibreOffice installed).
+   - **PPTX:** @s8fy/pptx-converter → PDF → mupdf pipeline (in-process WASM, no system dependency).
 5. Returns content blocks (`image`/`audio`/`video`/`text`) in the tool result.
 
 pi's `convertMessages` serializes these blocks into the provider payload (`image_url`/`input_audio`/`input_video`). This requires a **patch** to pi's provider bundle and compaction — applied automatically on plugin load.
@@ -45,18 +45,11 @@ extendedRead path="doc.pdf" mode="image" pages="3,7"  → PNG of pages 3 and 7
 pi install git:https://github.com/yusrmuttaqien/pi-extendedread-plugin
 ```
 
-### PPTX support (optional)
+### PPTX support
 
-PPTX files require **LibreOffice** to be installed:
+PPTX files are converted to PDF using `@s8fy/pptx-converter` (in-process WASM engine). No system dependency required.
 
-| Platform | Install |
-|---|---|
-| macOS | `brew install --cask libreoffice` |
-| Linux (Debian/Ubuntu) | `sudo apt install libreoffice` |
-| Linux (Fedora) | `sudo dnf install libreoffice` |
-| Windows | Download from [libreoffice.org](https://www.libreoffice.org) |
-
-If LibreOffice is not found, PPTX files return a note instead of an error.
+**Note:** The free (unlicensed) tier adds a demo watermark to PDF output. This is cosmetic and does not affect text extraction or model comprehension.
 
 ## Configuration
 

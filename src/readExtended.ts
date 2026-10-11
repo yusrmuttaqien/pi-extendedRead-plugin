@@ -421,14 +421,13 @@ async function readPptx(
 	// Convert to PDF in a temp directory
 	const tmpDir = await mkdtemp(join(tmpdir(), "pi-pptx-"));
 	const baseName = path.replace(/\.pptx$/i, "");
-	const outDir = join(tmpDir, "out");
 	try {
 		await execFile(
 			sofficePath,
-			["--headless", "--convert-to", "pdf", "--outdir", outDir, path],
+			["--headless", "--convert-to", "pdf", "--outdir", tmpDir, path],
 			{ timeout: 30000 },
 		);
-		const pdfPath = join(outDir, `${baseName.split("/").pop()}.pdf`);
+		const pdfPath = join(tmpDir, `${baseName.split("/").pop()}.pdf`);
 		return await readPdf(pdfPath, params, config, input);
 	} catch (e: any) {
 		return {

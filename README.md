@@ -2,7 +2,7 @@
 
 Pi extension: `extendedRead` tool for media files (images, audio, video, PDF) with native serialization.
 
-Built with [llama.cpp](https://github.com/ggml-org/llama.cpp) multimodal model support — works with any vision-capable model (local or API) that declares `"image"` in its input capabilities.
+Built with [llama.cpp](https://github.com/ggml-org/llama.cpp) for local multimodal inference. Media modality is gated by model capabilities in `config.json` — configure per-model support for images, audio, and video.
 
 Complements pi's native `read` tool (text + basic images) by adding:
 - Extended image formats (heic, heif, tiff, tif, tga, avif)

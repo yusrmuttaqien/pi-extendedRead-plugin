@@ -197,7 +197,10 @@ Mirrors native `read`'s flow: resolve → stat → detect → process → return
 ### PPTX pipeline (LibreOffice → PDF → mupdf)
 - **Library:** `soffice` (LibreOffice) CLI, headless mode.
 - **Flow:** `soffice --headless --convert-to pdf --outdir <tmp> <input.pptx>` → temp PDF → `readPdf`.
-- **Requirement:** LibreOffice must be installed. If not found, returns a note.
+- **Requirement:** LibreOffice must be installed (`soffice` on PATH). If not found, returns a note.
+  - macOS: `brew install --cask libreoffice`
+  - Linux: `sudo apt install libreoffice` (Debian/Ubuntu), `sudo dnf install libreoffice` (Fedora)
+  - Windows: Download from libreoffice.org
 - **Timeout:** 30s for conversion.
 - **Cleanup:** temp directory removed in `finally`.
 

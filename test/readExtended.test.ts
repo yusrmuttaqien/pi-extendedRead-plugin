@@ -176,6 +176,15 @@ test("PDF page selector", async () => {
 });
 
 test("PDF: image mode gated by model capability", async () => {
+	const noImageConfig: PluginConfig = {
+		models: {},
+		defaults: {
+			input: ["text", "audio", "video"],
+			maxBytes: { image: 10485760, audio: 20971520, video: 52428800 },
+			executionMode: "parallel",
+			ffmpegTimeoutMs: 30000,
+		},
+	};
 	const dir = await mkdtemp(join(tmpdir(), "pi-extread-"));
 	const pdfBytes = Buffer.from(
 		"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>\nendobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>\nendobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>\nendobj\nxref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n166\n%%EOF\n",
@@ -187,7 +196,7 @@ test("PDF: image mode gated by model capability", async () => {
 	const result = await readExtended(
 		{ path: file, mode: "image" },
 		{ cwd: dir, modelId: "test" },
-		config,
+		noImageConfig,
 	);
 	const allText = text(result.content as any);
 	assert.match(allText, /does not support images/);

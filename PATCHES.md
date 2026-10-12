@@ -6,9 +6,9 @@ Maintenance checklist for the pi patches applied by this plugin.
 
 | ID | File | Change | Anchor (first 40 chars) | Sentinel |
 |---|---|---|---|---|
-| `convertMessages` | `dist/bundle/chunks/openai-completions-*.js` | Add audio/video block detection + serialization | `type:"image"` | `// pi-media-patch:v1:convertMessages` |
-| `convertMessagesBlocks` | `dist/bundle/chunks/openai-completions-*.js` | Map audio/video blocks to input_audio/input_video | `isImageContentBlock(block)` | `// pi-media-patch:v1:convertMessagesBlocks` |
-| `compaction` | `dist/core/compaction/compaction.js` | Add ESTIMATED_AUDIO_CHARS, ESTIMATED_VIDEO_CHARS | `ESTIMATED_IMAGE_CHARS` | `// pi-media-patch:v1:compaction` |
+| `convertMessages` | `dist/bundle/chunks/openai-completions-*.js` | Add audio/video block detection + serialization | `type:"image"` | `// pi-extendedread:v1:convertMessages` |
+| `convertMessagesBlocks` | `dist/bundle/chunks/openai-completions-*.js` | Map audio/video blocks to input_audio/input_video | `isImageContentBlock(block)` | `// pi-extendedread:v1:convertMessagesBlocks` |
+| `compaction` | `dist/core/compaction/compaction.js` | Add ESTIMATED_AUDIO_CHARS, ESTIMATED_VIDEO_CHARS | `ESTIMATED_IMAGE_CHARS` | `// pi-extendedread:v1:compaction` |
 
 ## After a pi update
 
@@ -23,7 +23,7 @@ Maintenance checklist for the pi patches applied by this plugin.
 
 ```bash
 # Check sentinel in the bundle:
-grep "pi-media-patch" $(node -e "console.log(require.resolve('@earendil-works/pi-coding-agent/package.json').split('package.json')[0])")/dist/bundle/chunks/openai-completions-*.js
+grep "pi-extendedread" $(node -e "console.log(require.resolve('@earendil-works/pi-coding-agent/package.json').split('package.json')[0])")/dist/bundle/chunks/openai-completions-*.js
 
 # Check compaction:
 grep "ESTIMATED_AUDIO_CHARS" $(node -e "console.log(require.resolve('@earendil-works/pi-coding-agent/package.json').split('package.json')[0])")/dist/core/compaction/compaction.js

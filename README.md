@@ -1,6 +1,6 @@
 # pi-extendedread-plugin
 
-Pi extension: `extendedRead` tool for media files (images, audio, video, PDF) with native serialization.
+Pi extension: `extendedRead` tool for media files (images, audio, video, PDF, PPTX) with native serialization.
 
 Built with [llama.cpp](https://github.com/ggml-org/llama.cpp) for local multimodal inference. Media modality is gated by model capabilities in `config.json` — configure per-model support for images, audio, and video.
 

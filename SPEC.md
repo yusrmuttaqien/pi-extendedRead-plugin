@@ -1,6 +1,6 @@
 # `extendedRead` — Design Spec
 
-A model-invoked tool that reads media files (images, audio, video, PDF) and returns them as attachments the model can perceive. Complements the native `read` tool (text + basic images) by adding audio, video, extended image formats, and PDF reading.
+A model-invoked tool that reads media files (images, audio, video, PDF, PPTX) and returns them as attachments the model can perceive. Complements the native `read` tool (text + basic images) by adding audio, video, extended image formats, PDF reading, and PPTX.
 
 ## 1. Goal
 
@@ -240,7 +240,7 @@ The native mechanism for audio/video requires a patch to pi's provider bundle, c
 
 ### How it's applied
 
-- **Automatic on plugin load.** The plugin's activation checks for a sentinel comment (`// pi-media-patch:v1:<targetId>`) in each target file. If absent, it reads the file, applies the string replacement, writes it back, and inserts the sentinel. Idempotent.
+- **Automatic on plugin load.** The plugin's activation checks for a sentinel comment (`// pi-extendedread:v1:<targetId>`) in each target file. If absent, it reads the file, applies the string replacement, writes it back, and inserts the sentinel. Idempotent. Legacy sentinels (`// pi-media-patch:v1:<targetId>`) are also recognized for backward compatibility.
 - **Slash command** (`/extended-read-patch`). Forces re-apply. Reports per-target: "patched", "already present", or "target not found (pi update?)".
 
 ### Locating files
@@ -251,9 +251,9 @@ The native mechanism for audio/video requires a patch to pi's provider bundle, c
 
 ### Versioning, failure & maintenance
 
-- Sentinel: `// pi-media-patch:v1:<targetId>`. Version mismatch → re-apply.
+- Sentinel: `// pi-extendedread:v1:<targetId>`. Legacy: `// pi-media-patch:v1:<targetId>` (still recognized). Version mismatch → re-apply.
 - **Pi version recorded:** the plugin reads the pi version from `@earendil-works/pi-coding-agent/package.json` and stores it alongside the sentinel. `/extended-read-patch` reports: `"patched against pi v0.4.2"`.
-- If a target's anchor string doesn't match (pi structural change), the plugin warns: `"pi-media-patch: target '<id>' not found — pi update may have changed the code. Manual review needed."` Loud, not silent.
+- If a target's anchor string doesn't match (pi structural change), the plugin warns: `"pi-extendedread: target '<id>' not found — pi update may have changed the code. Manual review needed."` Loud, not silent.
 - **Maintenance:** when pi updates and a target fails, read the new bundle, update the anchor + replace in `targets.ts`, bump the sentinel version, re-apply via `/extended-read-patch`. `PATCHES.md` is the checklist.
 
 ## 9. Plugin structure

@@ -7,7 +7,9 @@
  *   - replace: replacement text
  *   - sentinel: comment marking a successfully applied patch
  *
- * Anchors are matched against the ACTUAL minified pi bundle (v0.85.0).
+ * Anchors are matched against the ACTUAL minified pi bundle. Chunk filenames
+ * are resolved dynamically by pattern (e.g. "openai-completions-*.js") to
+ * survive pi updates that change build hashes.
  */
 
 export interface PatchTarget {

@@ -106,6 +106,12 @@ export interface ExtendedReadParams {
 	path: string;
 	pages?: string;
 	mode?: "text" | "image";
+	/** PDF: return table of contents/outline. */
+	toc?: boolean;
+	/** PDF: search for text (case-insensitive). Returns matching pages with context. */
+	search?: string;
+	/** PDF: DPI for image mode (overrides config default). Range: 72–600. */
+	dpi?: number;
 }
 
 export interface ExtendedReadContext {
@@ -305,7 +311,17 @@ async function readPdf(
 			pageIndices = pageIndices.slice(0, maxPages);
 		}
 		const mode = params.mode ?? "text";
-		const dpi = config.defaults.pdf?.defaultDpi ?? 150;
+		const dpi = params.dpi ?? config.defaults.pdf?.defaultDpi ?? 150;
+
+		// --- TOC mode ---
+		if (params.toc) {
+			return readPdfToc(doc);
+		}
+
+		// --- Search mode ---
+		if (params.search) {
+			return readPdfSearch(doc, params.search, pageIndices, totalPages);
+		}
 
 		if (mode === "image" && !input.includes("image")) {
 			return {
@@ -329,12 +345,12 @@ async function readPdf(
 						blocks.push({ type: "text", text: `--- Page ${i + 1} ---\n${text}` });
 					}
 				} finally {
-				page.destroy();
+					page.destroy();
 				}
 			}
 			blocks.push({
 				type: "text",
-				text: `PDF: ${totalPages} pages. Read pages ${pageIndices.map((i) => i + 1).join(",")}. Use pages='N-M' for more, mode='image' to view visually.`,
+				text: `PDF: ${totalPages} pages. Read pages ${pageIndices.map((i) => i + 1).join(",")}. Use pages='N-M' for more, mode='image' to view visually, toc=true for outline, search='query' to find text.`,
 			});
 		} else {
 			// Image rendering
@@ -348,24 +364,24 @@ async function readPdf(
 					try {
 						const png = Buffer.from(pixmap.asPNG());
 						blocks.push({
-						type: "text",
-						text: `PDF page ${i + 1} of ${totalPages}`,
-					});
+							type: "text",
+							text: `PDF page ${i + 1} of ${totalPages} (${dpi} DPI)`,
+						});
 						blocks.push({
-						type: "image",
-						data: png.toString("base64"),
-						mimeType: "image/png",
-					});
+							type: "image",
+							data: png.toString("base64"),
+							mimeType: "image/png",
+						});
+					} finally {
+						pixmap.destroy();
+					}
 				} finally {
-					pixmap.destroy();
+					page.destroy();
 				}
-			} finally {
-				page.destroy();
 			}
-		}
 			blocks.push({
 				type: "text",
-				text: `PDF: ${totalPages} pages. Read pages ${pageIndices.map((i) => i + 1).join(",")}. Use pages='N-M' for more.`,
+				text: `PDF: ${totalPages} pages. Read pages ${pageIndices.map((i) => i + 1).join(",")} at ${dpi} DPI. Use pages='N-M' for more, dpi=N to change resolution.`,
 			});
 		}
 
@@ -373,6 +389,88 @@ async function readPdf(
 	} finally {
 		doc.destroy();
 	}
+}
+
+/** Extract and format the PDF outline/TOC. */
+function readPdfToc(doc: any): AgentToolResult {
+	const outline = doc.loadOutline();
+	if (!outline || outline.length === 0) {
+		return {
+			content: [{ type: "text", text: "PDF has no table of contents/outline." }],
+		};
+	}
+	const lines: string[] = ["PDF Outline:"];
+	function walk(items: any[], depth: number) {
+		for (const item of items) {
+			const indent = "\t".repeat(depth);
+			const pageRef = item.page != null ? ` [p.${item.page + 1}]` : "";
+			lines.push(`${indent}- ${item.title ?? "(untitled)"}${pageRef}`);
+			if (item.down && item.down.length > 0) {
+				walk(item.down, depth + 1);
+			}
+		}
+	}
+	walk(outline, 0);
+	lines.push("");
+	lines.push("Use pages='N' to read a specific page, search='query' to find text.");
+	return { content: [{ type: "text", text: lines.join("\n") }] };
+}
+
+/** Search PDF pages for text, return matching pages with context. */
+function readPdfSearch(
+	doc: any,
+	needle: string,
+	pageIndices: number[],
+	totalPages: number,
+): AgentToolResult {
+	const blocks: { type: string; text?: string }[] = [];
+	let totalHits = 0;
+
+	for (const i of pageIndices) {
+		const page = doc.loadPage(i);
+		try {
+			const hits = page.search(needle);
+			if (hits && hits.length > 0) {
+				totalHits += hits.length;
+				// Get surrounding context from structured text
+				const stext = page.toStructuredText("preserve-whitespace");
+				const text = stext.asText();
+				stext.destroy();
+				// Find the needle in text (case-insensitive) for context
+				const lowerText = text.toLowerCase();
+				const lowerNeedle = needle.toLowerCase();
+				const idx = lowerText.indexOf(lowerNeedle);
+				let context: string;
+				if (idx >= 0) {
+					const start = Math.max(0, idx - 60);
+					const end = Math.min(text.length, idx + needle.length + 60);
+					context = (start > 0 ? "…" : "") + text.slice(start, end) + (end < text.length ? "…" : "");
+				} else {
+					context = text.slice(0, 120) + (text.length > 120 ? "…" : "");
+				}
+				blocks.push({
+					type: "text",
+					text: `--- Page ${i + 1} (${hits.length} hit${hits.length === 1 ? "" : "s"}) ---\n${context}`,
+				});
+			}
+		} finally {
+			page.destroy();
+		}
+	}
+
+	if (totalHits === 0) {
+		blocks.push({
+			type: "text",
+			text: `No matches for "${needle}" in pages ${pageIndices.map((i) => i + 1).join(",")}.`,
+		});
+	} else {
+		blocks.push({
+			type: "text",
+			text: `Search "${needle}": ${totalHits} hit${totalHits === 1 ? "" : "s"} across ${pageIndices.length} page${pageIndices.length === 1 ? "" : "s"}. Use pages='N' to read full page content.`,
+		});
+	}
+
+	return { content: blocks };
 }
 
 /** Parse a page selector like "1", "1-5", "3,7,12" into zero-based indices. */

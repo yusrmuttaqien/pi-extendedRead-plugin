@@ -45,7 +45,7 @@ export default function activate(pi: ExtensionAPI) {
 			"Images: png, jpg, jpeg, gif, webp, bmp, heic, heif, tiff, tif, tga, avif. " +
 			"Audio: wav, mp3, flac, ogg, aiff, aif, m4a, aac, wma, opus. " +
 			"Video: mp4, webm, mkv, mov, avi. " +
-			"PDF: text extraction (default) or page rendering to image. Use pages='1-5' for pagination. " +
+			"PDF: text extraction (default) or page rendering to image. Use pages='1-5' for pagination, toc=true for outline, search='query' to find text, dpi=N for resolution. " +
 			"PPTX: converts to PDF via @s8fy/pptx-converter, then uses the PDF pipeline. " +
 			"For text files, use the native read tool.",
 		promptSnippet: "Read media files",
@@ -57,6 +57,9 @@ export default function activate(pi: ExtensionAPI) {
 			path: Type.String({ description: "Path to the file (relative, absolute, or ~)" }),
 			pages: Type.Optional(Type.String({ description: "Page selector for PDFs: '1', '1-5', '3,7,12' (default: '1')" })),
 			mode: Type.Optional(Type.Union([Type.Literal("text"), Type.Literal("image")], { description: "PDF mode: 'text' (default) or 'image'" })),
+			toc: Type.Optional(Type.Boolean({ description: "PDF: return table of contents/outline" })),
+			search: Type.Optional(Type.String({ description: "PDF: search for text (case-insensitive), returns matching pages with context" })),
+			dpi: Type.Optional(Type.Number({ description: "PDF: DPI for image mode (72-600, default from config)" })),
 		}),
 		executionMode: executionMode(config),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {

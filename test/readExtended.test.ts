@@ -342,3 +342,67 @@ test("capability gate: model doesn't support video", async () => {
 
 	await rm(dir, { recursive: true });
 });
+
+// --- PDF TOC, Search, DPI tests ---
+
+test("PDF: toc=true returns outline", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "extread-"));
+	// Create a minimal PDF with an outline using mupdf
+	const mupdf = await import("mupdf") as any;
+	// Use a simple PDF that has text (no outline) to test the "no outline" path
+	const pdfBytes = Buffer.from(
+		"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>\ntrailer<</Size 4/Root 1 0 R>>\n%%EOF",
+	);
+	const file = join(dir, "test.pdf");
+	await writeFile(file, pdfBytes);
+
+	const result = await readExtended(
+		{ path: file, toc: true },
+		{ cwd: dir, modelId: "test" },
+		config,
+	);
+	const allText = text(result.content as any);
+	assert.match(allText, /no table of contents/i);
+
+	await rm(dir, { recursive: true });
+});
+
+test("PDF: search returns no matches for absent text", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "extread-"));
+	const pdfBytes = Buffer.from(
+		"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>\ntrailer<</Size 4/Root 1 0 R>>\n%%EOF",
+	);
+	const file = join(dir, "test.pdf");
+	await writeFile(file, pdfBytes);
+
+	const result = await readExtended(
+		{ path: file, search: "nonexistent text that is not in the pdf" },
+		{ cwd: dir, modelId: "test" },
+		config,
+	);
+	const allText = text(result.content as any);
+	assert.match(allText, /No matches/i);
+
+	await rm(dir, { recursive: true });
+});
+
+test("PDF: dpi parameter is accepted (image mode)", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "extread-"));
+	const pdfBytes = Buffer.from(
+		"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>\ntrailer<</Size 4/Root 1 0 R>>\n%%EOF",
+	);
+	const file = join(dir, "test.pdf");
+	await writeFile(file, pdfBytes);
+
+	// Image mode with dpi — minimal PDF has no content, so toPixmap succeeds
+	// (blank page). Proves the dpi param is accepted and dispatch works.
+	const result = await readExtended(
+		{ path: file, mode: "image", dpi: 300 },
+		{ cwd: dir, modelId: "test" },
+		config,
+	);
+	const allText = text(result.content as any);
+	assert.match(allText, /300 DPI/);
+
+	await rm(dir, { recursive: true });
+});

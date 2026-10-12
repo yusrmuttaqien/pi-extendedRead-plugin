@@ -92,7 +92,7 @@ defineTool({
     "Images: png, jpg, jpeg, gif, webp, bmp, heic, heif, tiff, tif, tga, avif. " +
     "Audio: wav, mp3, flac, ogg, aiff, aif, m4a, aac, wma, opus. " +
     "Video: mp4, webm, mkv, mov, avi. " +
-    "PDF: text extraction (default) or page rendering to image. Use pages='1-5' for pagination. " +
+    "PDF: text extraction (default) or page rendering to image. Use pages='1-5' for pagination, toc=true for outline, search='query' to find text, dpi=N for resolution. " +
     "PPTX: converts to PDF via @s8fy/pptx-converter, then uses the PDF pipeline. " +
     "For text files, use the native read tool.",
   promptSnippet: "Read media files",
@@ -104,6 +104,9 @@ defineTool({
     path: Type.String({ description: "Path to the file (relative, absolute, or ~)" }),
     pages: Type.Optional(Type.String({ description: "Page selector for PDFs: '1', '1-5', '3,7,12' (default: '1')" })),
     mode: Type.Optional(Type.Union([Type.Literal("text"), Type.Literal("image")], { description: "PDF mode: 'text' (default) or 'image'" })),
+    toc: Type.Optional(Type.Boolean({ description: "PDF: return table of contents/outline" })),
+    search: Type.Optional(Type.String({ description: "PDF: search for text (case-insensitive), returns matching pages with context" })),
+    dpi: Type.Optional(Type.Number({ description: "PDF: DPI for image mode (72-600, default from config)" })),
   }),
   executionMode: config.defaults.executionMode,
   async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -211,6 +214,9 @@ Mirrors native `read`'s flow: resolve → stat → detect → process → return
 - **Text mode** (default): `page.toStructuredText("preserve-whitespace").asText()` per page. Lightweight, works with any model.
 - **Image mode**: `page.toPixmap(Matrix.scale(dpi/72, dpi/72), ColorSpace.DeviceRGB).asPNG()` per page. For visual escalation.
 - **Pagination:** `pages` param accepts `"1"`, `"1-5"`, `"3,7,12"`. Default: page 1. Response includes total page count so the model can navigate.
+- **TOC:** `toc=true` → `doc.loadOutline()` returns hierarchical outline with titles and page refs. Formatted as indented list.
+- **Search:** `search='query'` → `page.search(needle)` per page. Returns matching pages with 60-char context windows. Case-insensitive.
+- **DPI:** `dpi=N` overrides `config.defaults.pdf.defaultDpi` for image mode. Range 72–600.
 - **Memory:** mupdf uses WASM memory (not GC'd). All objects (`doc`, `page`, `pixmap`, `stext`) must be `.destroy()`'d in `finally` blocks.
 - **Config:** `pdf.defaultDpi` (150), `pdf.maxPagesPerCall` (10).
 
@@ -342,8 +348,5 @@ The model picks the tool based on file type. There's no conflict: both can handl
 
 - **Compaction interleave:** shedding stale tool-result media depends on a future pi compaction feature.
 - **Resize options exposure:** whether to let the model control image resize parameters.
-- **PDF: expose DPI as model parameter** — let the model request higher resolution (e.g., 300 DPI) for pages with small text or fine details.
-- **PDF: table of contents** — extract and return the PDF outline/TOC for navigation.
-- **PDF: text search** — `mupdf` supports `page.search(needle)`; expose as a tool parameter.
 - **DOCX support** — use `mammoth` (npm, pure JS) to extract text directly from DOCX. No PDF conversion needed. Handles headings, paragraphs, tables, lists.
 - **Pages (`.pages`) support** — macOS-only. Convert to PDF via AppleScript/Pages app, then use existing PDF pipeline.

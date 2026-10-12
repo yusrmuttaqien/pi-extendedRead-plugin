@@ -5,13 +5,14 @@
  * format dispatch, and error handling.
  */
 
-import { test } from "node:test";
+import { test, mock } from "node:test";
 import assert from "node:assert";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { readExtended } from "../src/readExtended.js";
+import { resolvePiRoot } from "../src/patch/index.js";
 import type { PluginConfig } from "../src/config.js";
 
 /** Extract text from array content. */
@@ -217,6 +218,128 @@ test("PPTX: returns conversion failed for invalid file", async () => {
 	const allText = text(result.content as any);
 	// Should return "conversion failed" since the file is not a valid PPTX
 	assert.match(allText, /conversion failed/i);
+
+	await rm(dir, { recursive: true });
+});
+
+test("image direct: PNG dispatch reaches image handler", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "extread-"));
+	// Minimal valid 1x1 PNG — we're testing dispatch, not the resize pipeline.
+	const pngBytes = Buffer.from(
+		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQAAHXuKfwAAAABJRU5ErkJggg==",
+		"base64",
+	);
+	const file = join(dir, "test.png");
+	await writeFile(file, pngBytes);
+
+	// In the test environment, Photon WASM (pi's image resize engine) is
+	// unavailable, so processImage throws. This proves dispatch reached
+	// the image handler (file recognized as PNG, capability gate passed).
+	await assert.rejects(
+		readExtended({ path: file }, { cwd: dir, modelId: "test" }, config),
+		/resize|Image|Photon/i,
+	);
+
+	await rm(dir, { recursive: true });
+});
+
+test("audio direct: WAV returns audio block", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "extread-"));
+	// Minimal WAV header (RIFF + 44 bytes)
+	const wavBytes = Buffer.alloc(44);
+	wavBytes.write("RIFF", 0);
+	wavBytes.write("WAVE", 8);
+	wavBytes.write("fmt ", 12);
+	const file = join(dir, "test.wav");
+	await writeFile(file, wavBytes);
+
+	const result = await readExtended(
+		{ path: file },
+		{ cwd: dir, modelId: "test" },
+		config,
+	);
+	const blocks = result.content as any[];
+	assert.ok(blocks.some((b) => b.type === "audio"));
+
+	await rm(dir, { recursive: true });
+});
+
+test("video direct: MP4 returns video block", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "extread-"));
+	// Minimal MP4 header (ftyp box)
+	const mp4Bytes = Buffer.from([
+		0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70, // ftyp box
+		0x69, 0x73, 0x6f, 0x6d, 0x20, 0x20, 0x20, 0x20,
+	]);
+	const file = join(dir, "test.mp4");
+	await writeFile(file, mp4Bytes);
+
+	const result = await readExtended(
+		{ path: file },
+		{ cwd: dir, modelId: "test" },
+		config,
+	);
+	const blocks = result.content as any[];
+	assert.ok(blocks.some((b) => b.type === "video"));
+
+	await rm(dir, { recursive: true });
+});
+
+test("capability gate: model doesn't support images", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "extread-"));
+	const pngBytes = Buffer.from(
+		"iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAIAAAD/gAIDAAAACXBIWXMAAAABAAAAAQBPJcTWAAAA50lEQVR4nO3QsQkAIADAMAX/v9jBF+wkQnJB6dyDW+t1wE/MCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKDqR1Aoosepp1AAAAAElFTkSuQmCC",
+		"base64",
+	);
+	const file = join(dir, "test.png");
+	await writeFile(file, pngBytes);
+
+	const noImageConfig: PluginConfig = {
+		models: {},
+		defaults: {
+			input: ["text", "audio", "video"],
+			maxBytes: { image: 10485760, audio: 20971520, video: 52428800 },
+			executionMode: "parallel",
+			ffmpegTimeoutMs: 30000,
+		},
+	};
+
+	const result = await readExtended(
+		{ path: file },
+		{ cwd: dir, modelId: "test" },
+		noImageConfig,
+	);
+	const allText = text(result.content as any);
+	assert.match(allText, /does not support images/);
+
+	await rm(dir, { recursive: true });
+});
+
+test("capability gate: model doesn't support video", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "extread-"));
+	const mp4Bytes = Buffer.from([
+		0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0x20, 0x20, 0x20, 0x20,
+	]);
+	const file = join(dir, "test.mp4");
+	await writeFile(file, mp4Bytes);
+
+	const noVideoConfig: PluginConfig = {
+		models: {},
+		defaults: {
+			input: ["text", "image", "audio"],
+			maxBytes: { image: 10485760, audio: 20971520, video: 52428800 },
+			executionMode: "parallel",
+			ffmpegTimeoutMs: 30000,
+		},
+	};
+
+	const result = await readExtended(
+		{ path: file },
+		{ cwd: dir, modelId: "test" },
+		noVideoConfig,
+	);
+	const allText = text(result.content as any);
+	assert.match(allText, /does not support video/);
 
 	await rm(dir, { recursive: true });
 });

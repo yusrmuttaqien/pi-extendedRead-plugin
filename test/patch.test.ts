@@ -91,3 +91,63 @@ test("two targets in same file apply independently", async () => {
 
 	await rm(dir, { recursive: true });
 });
+
+test("legacy sentinel recognized as already-present", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "pi-media-patch-test-"));
+	const t = targets.find((x) => x.id === "compaction")!;
+	const filePath = join(dir, t.file);
+	await mkdir(dirname(filePath), { recursive: true });
+	// File already has the OLD sentinel (from a previous plugin version)
+	await writeFile(
+		filePath,
+		`const ESTIMATED_IMAGE_CHARS = 4800;\nconst ESTIMATED_AUDIO_CHARS = 1500;\nconst ESTIMATED_VIDEO_CHARS = 5000;\n// pi-media-patch:v1:compaction`,
+	);
+
+	const result = applyPatches(dir);
+	const r = result.find((x) => x.id === "compaction")!;
+	assert.equal(r.status, "already-present");
+
+	await rm(dir, { recursive: true });
+});
+
+test("new sentinel written on patch (not legacy)", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "pi-media-patch-test-"));
+	const t = targets.find((x) => x.id === "compaction")!;
+	const filePath = join(dir, t.file);
+	await mkdir(dirname(filePath), { recursive: true });
+	await writeFile(filePath, `const ESTIMATED_IMAGE_CHARS = 4800;\n`);
+
+	const result = applyPatches(dir);
+	assert.equal(result.find((x) => x.id === "compaction")!.status, "patched");
+
+	const content = await readFile(filePath, "utf8");
+	assert.ok(content.includes("// pi-extendedread:v1:compaction"));
+	assert.ok(!content.includes("// pi-media-patch:v1:compaction"));
+
+	await rm(dir, { recursive: true });
+});
+
+test("dynamic hash resolution: finds file with different hash", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "pi-media-patch-test-"));
+	const t = targets.find((x) => x.id === "convertMessages")!;
+	// The target file has hash "OSRCWAAA" but we create it with a different hash
+	const dirName = dirname(t.file);
+	const baseName = t.file.slice(dirName.length + 1); // "openai-completions-OSRCWAAA.js"
+	const prefix = baseName.replace(/-[A-Z0-9]{6,}\.js$/, ""); // "openai-completions"
+	const altHash = "ZZZ99999";
+	const altFile = join(dir, dirName, `${prefix}-${altHash}.js`);
+	await mkdir(dirname(altFile), { recursive: true });
+	await writeFile(
+		altFile,
+		'hasImages=toolMsg.content.some(c=>c.type==="image")\n',
+	);
+
+	const result = applyPatches(dir);
+	const r = result.find((x) => x.id === "convertMessages")!;
+	assert.equal(r.status, "patched");
+
+	const content = await readFile(altFile, "utf8");
+	assert.ok(content.includes('c.type==="image"||c.type==="audio"||c.type==="video"'));
+
+	await rm(dir, { recursive: true });
+});

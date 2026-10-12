@@ -28,17 +28,22 @@ pi's `convertMessages` serializes these blocks into the provider payload (`image
 
 ## PDF reading
 
-PDFs support two modes:
+PDFs support text extraction, visual rendering, table of contents, and text search:
 
 ```
 extendedRead path="doc.pdf"                  → text of page 1 + pagination hint
 extendedRead path="doc.pdf" pages="5-10"     → text of pages 5-10
 extendedRead path="doc.pdf" mode="image"     → PNG of page 1
 extendedRead path="doc.pdf" mode="image" pages="3,7"  → PNG of pages 3 and 7
+extendedRead path="doc.pdf" mode="image" dpi=300      → PNG at 300 DPI
+extendedRead path="doc.pdf" toc=true          → table of contents/outline
+extendedRead path="doc.pdf" search="quarterly revenue"  → pages matching query
 ```
 
 - **Text mode** (default): extracts text via mupdf's `toStructuredText`. Lightweight, works with any model.
-- **Image mode**: renders pages to PNG at configurable DPI. For visual escalation (charts, diagrams, scanned docs).
+- **Image mode**: renders pages to PNG at configurable DPI (`dpi` param, default 150). For visual escalation (charts, diagrams, scanned docs).
+- **TOC**: `toc=true` extracts the PDF outline/TOC via `doc.loadOutline()`. Returns hierarchical list with titles and page refs.
+- **Search**: `search='query'` performs case-insensitive text search via `page.search()`. Returns matching pages with 60-char context windows.
 - **Pagination**: the `pages` parameter accepts `"1"`, `"1-5"`, `"3,7,12"`. Default is page 1. The response includes total page count so the model can navigate.
 
 ## Install

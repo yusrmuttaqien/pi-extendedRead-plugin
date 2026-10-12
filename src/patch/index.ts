@@ -66,8 +66,9 @@ export function applyPatches(piRoot: string): PatchResult[] {
 
 			const content = readFileSync(filePath, "utf-8");
 
-			// Idempotency check: sentinel already present?
-			if (content.includes(target.sentinel)) {
+			// Idempotency check: new OR legacy sentinel already present?
+			const allSentinels = [target.sentinel, ...(target.legacySentinels ?? [])];
+			if (allSentinels.some((s) => content.includes(s))) {
 				results.push({
 					id: target.id,
 					status: "already-present",

@@ -15,7 +15,10 @@ export interface PatchTarget {
 	file: string;
 	search: string;
 	replace: string;
+	/** New sentinel written on patch. */
 	sentinel: string;
+	/** Old sentinels still recognized for idempotency (backward compat). */
+	legacySentinels?: string[];
 }
 
 export const targets: PatchTarget[] = [
@@ -26,7 +29,8 @@ export const targets: PatchTarget[] = [
 		search: 'hasImages=toolMsg.content.some(c=>c.type==="image")',
 		replace:
 			'hasImages=toolMsg.content.some(c=>c.type==="image"||c.type==="audio"||c.type==="video")',
-		sentinel: "// pi-media-patch:v1:convertMessages",
+		sentinel: "// pi-extendedread:v1:convertMessages",
+		legacySentinels: ["// pi-media-patch:v1:convertMessages"],
 	},
 	{
 		id: "convertMessagesBlocks",
@@ -36,7 +40,8 @@ export const targets: PatchTarget[] = [
 			'isImageContentBlock(block)&&imageBlocks.push({type:"image_url",image_url:{url:`data:${block.mimeType};base64,${block.data}`}})',
 		replace:
 			'(block.type==="image"||block.type==="audio"||block.type==="video")&&imageBlocks.push(block.type==="image"?{type:"image_url",image_url:{url:`data:${block.mimeType};base64,${block.data}`}}:block.type==="audio"?{type:"input_audio",input_audio:{data:block.data}}:{type:"input_video",input_video:{data:block.data}})',
-		sentinel: "// pi-media-patch:v1:convertMessagesBlocks",
+		sentinel: "// pi-extendedread:v1:convertMessagesBlocks",
+		legacySentinels: ["// pi-media-patch:v1:convertMessagesBlocks"],
 	},
 	{
 		id: "compaction",
@@ -44,6 +49,7 @@ export const targets: PatchTarget[] = [
 		search: "const ESTIMATED_IMAGE_CHARS = 4800;",
 		replace:
 			"const ESTIMATED_IMAGE_CHARS = 4800;\nconst ESTIMATED_AUDIO_CHARS = 1500;\nconst ESTIMATED_VIDEO_CHARS = 5000;",
-		sentinel: "// pi-media-patch:v1:compaction",
+		sentinel: "// pi-extendedread:v1:compaction",
+		legacySentinels: ["// pi-media-patch:v1:compaction"],
 	},
 ];

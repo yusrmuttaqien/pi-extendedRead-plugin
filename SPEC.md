@@ -339,3 +339,5 @@ The model picks the tool based on file type. There's no conflict: both can handl
 - **PDF: expose DPI as model parameter** — let the model request higher resolution (e.g., 300 DPI) for pages with small text or fine details.
 - **PDF: table of contents** — extract and return the PDF outline/TOC for navigation.
 - **PDF: text search** — `mupdf` supports `page.search(needle)`; expose as a tool parameter.
+- **DOCX support** — use `mammoth` (npm, pure JS) to extract text directly from DOCX. No PDF conversion needed. Handles headings, paragraphs, tables, lists.
+- **Pages (`.pages`) support** — macOS-only. Convert to PDF via AppleScript/Pages app, then use existing PDF pipeline.

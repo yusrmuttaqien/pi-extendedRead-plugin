@@ -9,7 +9,7 @@
  * slash command for manual re-apply after pi updates.
  */
 
-import { readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, realpathSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 
 import { targets, type PatchTarget } from "./targets.js";
@@ -20,17 +20,46 @@ export interface PatchResult {
 	message: string;
 }
 
+/**
+ * Resolve a target file path. If the path contains a hashed filename
+ * (e.g. "openai-completions-OSRCWAAA.js"), search for files matching
+ * the pattern (e.g. "openai-completions-*.js") in the same directory.
+ * This survives pi updates that change chunk hashes.
+ */
+function resolveTargetFile(piRoot: string, targetFile: string): string | null {
+	const direct = join(piRoot, targetFile);
+	if (existsSync(direct)) return direct;
+
+	// Try dynamic resolution: split into dir + basename, search for pattern match
+	const dir = dirname(targetFile);
+	const base = targetFile.slice(dir.length + 1); // basename
+	// Check if basename looks like it has a hash suffix (e.g. "name-HASH.js")
+	const hashPattern = base.match(/^(.+)-([A-Z0-9]{6,})\.js$/);
+	if (hashPattern) {
+		const prefix = hashPattern[1];
+		const absDir = join(piRoot, dir);
+		if (existsSync(absDir)) {
+			const files = readdirSync(absDir);
+			const match = files.find(
+				(f) => f.startsWith(prefix + "-") && f.endsWith(".js"),
+			);
+			if (match) return join(absDir, match);
+		}
+	}
+	return null;
+}
+
 export function applyPatches(piRoot: string): PatchResult[] {
 	const results: PatchResult[] = [];
 
 	for (const target of targets) {
 		try {
-			const filePath = join(piRoot, target.file);
-			if (!existsSync(filePath)) {
+			const filePath = resolveTargetFile(piRoot, target.file);
+			if (!filePath) {
 				results.push({
 					id: target.id,
 					status: "not-found",
-					message: `File not found: ${filePath}`,
+					message: `File not found: ${join(piRoot, target.file)}`,
 				});
 				continue;
 			}

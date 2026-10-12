@@ -5,14 +5,13 @@
  * format dispatch, and error handling.
  */
 
-import { test, mock } from "node:test";
+import { test } from "node:test";
 import assert from "node:assert";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { readExtended } from "../src/readExtended.js";
-import { resolvePiRoot } from "../src/patch/index.js";
 import type { PluginConfig } from "../src/config.js";
 
 /** Extract text from array content. */

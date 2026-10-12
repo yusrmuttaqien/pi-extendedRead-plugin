@@ -89,7 +89,7 @@ The plugin patches two files in pi's install:
 | `convertMessages` | `dist/bundle/chunks/openai-completions-*.js` | Audio/video block serialization |
 | `compaction` | `dist/core/compaction/compaction.js` | Size estimation for audio/video |
 
-Patches are idempotent (sentinel-checked) and versioned. After a pi update, run `/media-patch` to re-apply. See `PATCHES.md` for the maintenance checklist.
+Patches are idempotent (sentinel-checked) and versioned. After a pi update, run `/extended-read-patch` to re-apply. See `PATCHES.md` for the maintenance checklist.
 
 ## Development
 

@@ -12,12 +12,12 @@ Maintenance checklist for the pi patches applied by this plugin.
 
 ## After a pi update
 
-1. Run `/media-patch` in pi.
+1. Run `/extended-read-patch` in pi.
 2. If any target reports `not-found`, the pi update changed the code structure.
 3. Open the target file in pi's install, find the new anchor string.
 4. Update `src/patch/targets.ts`: new `search` + `replace` for that target.
 5. Bump the version in `targets.ts` (`const VERSION = "v1"` → `"v2"`).
-6. Re-run `/media-patch` to verify.
+6. Re-run `/extended-read-patch` to verify.
 
 ## Verifying a patch is applied
 

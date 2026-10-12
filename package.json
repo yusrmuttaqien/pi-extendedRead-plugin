@@ -1,7 +1,7 @@
 {
   "name": "pi-extendedread-plugin",
   "version": "0.1.0",
-  "description": "Pi extension: extendedRead tool for media files (images, audio, video) with native serialization",
+  "description": "Pi extension: extendedRead tool for media files (images, audio, video, PDF, PPTX) with native serialization",
   "type": "module",
   "pi": {
     "extensions": [

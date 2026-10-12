@@ -23,7 +23,7 @@ Media enters the context **lazily** — only when the model calls the tool.
 | Serialization | **Native mechanism** — tool returns content blocks, pi's `convertMessages` serializes. No hook, no marker. |
 | Format handling | Deterministic; same support matrix across platforms |
 | Cleanup | OS-managed `/tmp`; no bookkeeping |
-| Pi patch | Bundled with plugin, applied on load + via `/media-patch` slash command |
+| Pi patch | Bundled with plugin, applied on load + via `/extended-read-patch` slash command |
 | Configuration | User-editable `config.json` with self-documenting `$docs` key |
 
 ## 3. Config file
@@ -241,7 +241,7 @@ The native mechanism for audio/video requires a patch to pi's provider bundle, c
 ### How it's applied
 
 - **Automatic on plugin load.** The plugin's activation checks for a sentinel comment (`// pi-media-patch:v1:<targetId>`) in each target file. If absent, it reads the file, applies the string replacement, writes it back, and inserts the sentinel. Idempotent.
-- **Slash command** (`/media-patch`). Forces re-apply. Reports per-target: "patched", "already present", or "target not found (pi update?)".
+- **Slash command** (`/extended-read-patch`). Forces re-apply. Reports per-target: "patched", "already present", or "target not found (pi update?)".
 
 ### Locating files
 
@@ -252,9 +252,9 @@ The native mechanism for audio/video requires a patch to pi's provider bundle, c
 ### Versioning, failure & maintenance
 
 - Sentinel: `// pi-media-patch:v1:<targetId>`. Version mismatch → re-apply.
-- **Pi version recorded:** the plugin reads the pi version from `@earendil-works/pi-coding-agent/package.json` and stores it alongside the sentinel. `/media-patch` reports: `"patched against pi v0.4.2"`.
+- **Pi version recorded:** the plugin reads the pi version from `@earendil-works/pi-coding-agent/package.json` and stores it alongside the sentinel. `/extended-read-patch` reports: `"patched against pi v0.4.2"`.
 - If a target's anchor string doesn't match (pi structural change), the plugin warns: `"pi-media-patch: target '<id>' not found — pi update may have changed the code. Manual review needed."` Loud, not silent.
-- **Maintenance:** when pi updates and a target fails, read the new bundle, update the anchor + replace in `targets.ts`, bump the sentinel version, re-apply via `/media-patch`. `PATCHES.md` is the checklist.
+- **Maintenance:** when pi updates and a target fails, read the new bundle, update the anchor + replace in `targets.ts`, bump the sentinel version, re-apply via `/extended-read-patch`. `PATCHES.md` is the checklist.
 
 ## 9. Plugin structure
 
@@ -266,7 +266,7 @@ pi-extendedread-plugin/
     config.ts           — loads config.json, exposes model capabilities + knobs
     types.d.ts          — ambient module declarations for pi's dist exports
     patch/
-      index.ts          — locate files, apply all targets, register /media-patch
+      index.ts          — locate files, apply all targets, register /extended-read-patch
       targets.ts        — PatchTarget definitions (anchor, replace, sentinel)
   config.json           — user-editable (self-documenting, §3)
   PATCHES.md            — maintenance doc: table of targets, anchors, sentinels
@@ -280,7 +280,7 @@ pi-extendedread-plugin/
 - Every source file starts with a block comment: purpose, pi version targeted, verification steps.
 - Each `PatchTarget` includes the **exact anchor string** in a comment, so when pi changes, you diff the anchor against the new bundle.
 - `PATCHES.md`: one table row per target — ID, file, what it does, anchor (first 40 chars), sentinel. Your maintenance checklist after pi updates.
-- `/media-patch` output is the diagnostic: per-target status + the anchor that failed (if any).
+- `/extended-read-patch` output is the diagnostic: per-target status + the anchor that failed (if any).
 
 ## 10. Context management
 

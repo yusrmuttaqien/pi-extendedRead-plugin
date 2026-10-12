@@ -5,7 +5,7 @@
  * and reports per-target status. Idempotent: re-apply is a no-op if the
  * sentinel is already present.
  *
- * Applied automatically on plugin load. Also exposed as /media-patch
+ * Applied automatically on plugin load. Also exposed as /extended-read-patch
  * slash command for manual re-apply after pi updates.
  */
 

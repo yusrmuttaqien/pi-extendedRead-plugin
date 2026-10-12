@@ -93,6 +93,7 @@ defineTool({
     "Audio: wav, mp3, flac, ogg, aiff, aif, m4a, aac, wma, opus. " +
     "Video: mp4, webm, mkv, mov, avi. " +
     "PDF: text extraction (default) or page rendering to image. Use pages='1-5' for pagination. " +
+    "PPTX: converts to PDF via @s8fy/pptx-converter, then uses the PDF pipeline. " +
     "For text files, use the native read tool.",
   promptSnippet: "Read media files",
   promptGuidelines: [
@@ -163,6 +164,11 @@ async function readExtended(params, ctx): Promise<AgentToolResult> {
   // --- PDF ---
   if (ext === "pdf") {
     return readPdf(path, params, config);
+  }
+
+  // --- PPTX (convert to PDF via @s8fy/pptx-converter) ---
+  if (ext === "pptx") {
+    return readPptx(path, params, config);
   }
 
   return note(`[extendedRead: unsupported format ${ext}]`);

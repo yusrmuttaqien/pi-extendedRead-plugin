@@ -19,7 +19,7 @@
     "mupdf": "^1.28.1"
   },
   "peerDependencies": {
-    "typebox": "*"
+    "typebox": "^1.3.27"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^1.1.0",

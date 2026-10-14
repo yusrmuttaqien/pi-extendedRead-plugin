@@ -92,7 +92,7 @@ defineTool({
     "Images: png, jpg, jpeg, gif, webp, bmp, heic, heif, tiff, tif, tga, avif. " +
     "Audio: wav, mp3, flac, ogg, aiff, aif, m4a, aac, wma, opus. " +
     "Video: mp4, webm, mkv, mov, avi. " +
-    "PDF: text extraction (default) or page rendering to image. Use pages='1-5' for pagination, toc=true for outline, search='query' to find text, dpi=N for resolution. " +
+    "PDF: text extraction (default) or page rendering to image. Use pages='1-5' for pagination, toc=true for outline, search='query' to find text, dpi=N for resolution, zoom='{x,y,w,h}' to magnify a region in image mode. " +
     "PPTX: converts to PDF via @s8fy/pptx-converter, then uses the PDF pipeline. " +
     "For text files, use the native read tool.",
   promptSnippet: "Read media files",
@@ -107,6 +107,7 @@ defineTool({
     toc: Type.Optional(Type.Boolean({ description: "PDF: return table of contents/outline" })),
     search: Type.Optional(Type.String({ description: "PDF: search for text (case-insensitive), returns matching pages with context" })),
     dpi: Type.Optional(Type.Number({ description: "PDF: DPI for image mode (72-600, default from config)" })),
+    zoom: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number(), w: Type.Number(), h: Type.Number() }, { description: "Region magnification (image mode only). Normalized fractions [0,1] of the page/image bounding box; omit for full frame." })),
   }),
   executionMode: config.defaults.executionMode,
   async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -217,6 +218,11 @@ Mirrors native `read`'s flow: resolve → stat → detect → process → return
 - **TOC:** `toc=true` → `doc.loadOutline()` returns hierarchical outline with titles and page refs. Formatted as indented list.
 - **Search:** `search='query'` → `page.search(needle)` per page. Returns matching pages with 60-char context windows. Case-insensitive.
 - **DPI:** `dpi=N` overrides `config.defaults.pdf.defaultDpi` for image mode. Range 72–600.
+- **Region zoom (`zoom`):** region magnification, image-mode only (text has no pixels to enlarge). Param `{x,y,w,h}` are normalized fractions in [0,1] of the page bounding box — resolution-independent so the model needs no pixel/DPI math. Applies to both direct images and PDF image mode:
+  - **Direct image:** crop the source file at `frac × originalPixelDims`, then pass through pi's pipeline (Photon) which final-sizes it under the inline budget.
+  - **PDF image mode:** mupdf renders the page via `toPixmap` — note this path does **not** use pi's Photon/resize pipeline, so its full-page PNG is unbounded by default. For a zoomed region, crop that raster at `frac × rasterDims` with ffmpeg before final-sizing.
+  - **Reference frame:** fractions are relative to the full raster already shown in image mode; no new coordinate metadata is needed. Ordering: for a PDF the model must render the full page (`mode="image"`) first to obtain a frame it can crop from, then request fractional boxes — inherent and not extra work.
+  - **Default:** omit `zoom` → full frame, byte-identical to today (backward compatible). Crop is done with ffmpeg's `crop=w:h:x:y`; small crops are upscaled by pi toward the budget. Targeting is approximate (eyeballed fractions), which is acceptable for "get that region bigger" and not pixel-perfect.
 - **Memory:** mupdf uses WASM memory (not GC'd). All objects (`doc`, `page`, `pixmap`, `stext`) must be `.destroy()`'d in `finally` blocks.
 - **Config:** `pdf.defaultDpi` (150), `pdf.maxPagesPerCall` (10).
 

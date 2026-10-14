@@ -100,6 +100,51 @@ function ffmpegConvert(
 	});
 }
 
+/** Promisified execFile returning both streams (callback-style ffmpeg already available). */
+function runCmd(binary: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+	return new Promise((resolveP, rejectP) => {
+		execFile(binary, args, { timeout: 10_000 }, (err, stdout, stderr) => {
+			if (err)
+				rejectP(err);
+			else
+				resolveP({ stdout, stderr });
+		});
+	});
+}
+
+/** Extract an image's pixel dimensions via ffmpeg's probe output. Returns null on any failure (caller falls back to no-zoom). */
+async function imageDims(inputPath: string): Promise<{ width: number; height: number } | null> {
+	try {
+		const { stderr } = await runCmd(ffmpeg.path, ["-hide_banner", "-i", inputPath, "-vframes", "1", "-f", "null", "-"]);
+		const m = String(stderr).match(/(\d+)x(\d+)/);
+		if (m && +m[1] > 0 && +m[2] > 0)
+			return { width: +m[1], height: +m[2] };
+	} catch {
+		/* fall through to no-zoom */
+	}
+	return null;
+}
+
+/** Crop a region of an image raster (any ffmpeg-decodable input) at normalized [x,y,w,h] fractions, returning the cropped PNG bytes. Returns null if dimensions can't be resolved. */
+export async function cropRegionToPng(inputPath: string, zoom: { x: number; y: number; w: number; h: number }, timeoutMs: number): Promise<Buffer | null> {
+	const dims = await imageDims(inputPath);
+	if (!dims)
+		return null;
+	const W = Math.max(1, Math.round(zoom.w * dims.width));
+	const H = Math.max(1, Math.round(zoom.h * dims.height));
+	const maxX = Math.max(0, dims.width - W);
+	const maxY = Math.max(0, dims.height - H);
+	const X = Math.min(Math.floor(zoom.x * dims.width), maxX);
+	const Y = Math.min(Math.floor(zoom.y * dims.height), maxY);
+	const outPath = join(tmpdir(), `pi-zoom-${process.pid}-${randomUUID()}.png`);
+	try {
+		await runCmd(ffmpeg.path, ["-y", "-i", inputPath, "-vf", `crop=${W}:${H}:${X}:${Y}`, outPath]);
+		return await readFile(outPath);
+	} finally {
+		await unlink(outPath).catch(() => {});
+	}
+}
+
 // --- Main ---
 
 export interface ExtendedReadParams {
@@ -112,6 +157,8 @@ export interface ExtendedReadParams {
 	search?: string;
 	/** PDF: DPI for image mode (overrides config default). Range: 72–600. */
 	dpi?: number;
+	/** Region magnification, image mode only. Normalized fractions [0,1] of the page/image bounding box; omit for full frame. */
+	zoom?: { x: number; y: number; w: number; h: number };
 }
 
 export interface ExtendedReadContext {
@@ -175,8 +222,16 @@ export async function readExtended(
 			return {
 				content: [{ type: "text", text: "Model does not support images" }],
 			};
-		const bytes = await readFile(path);
-		const { data, mimeType } = await processImageBytes(bytes, IMAGE_DIRECT[ext]);
+		let bytes: Buffer = await readFile(path);
+		let mime = IMAGE_DIRECT[ext];
+		if (params.zoom) {
+			const cropped = await cropRegionToPng(path, params.zoom, config.defaults.ffmpegTimeoutMs);
+			if (cropped) {
+				bytes = cropped;
+				mime = "image/png";
+			}
+		}
+		const { data, mimeType } = await processImageBytes(bytes, mime);
 		return {
 			content: [
 				{ type: "text", text: `Read image [${mimeType}]` },
@@ -367,11 +422,24 @@ async function readPdf(
 							type: "text",
 							text: `PDF page ${i + 1} of ${totalPages} (${dpi} DPI)`,
 						});
-						blocks.push({
-							type: "image",
-							data: png.toString("base64"),
-							mimeType: "image/png",
-						});
+						if (params.zoom) {
+							try {
+								const tmpInput = join(tmpdir(), `pi-pdf-${process.pid}-${randomUUID()}.png`);
+								await writeFile(tmpInput, png);
+								const cropped = await cropRegionToPng(tmpInput, params.zoom, config.defaults.ffmpegTimeoutMs);
+								await unlink(tmpInput).catch(() => {});
+								if (cropped) {
+									blocks.push({ type: "image", data: cropped.toString("base64"), mimeType: "image/png" });
+								} else {
+									blocks.push({ type: "image", data: png.toString("base64"), mimeType: "image/png" });
+								}
+							} catch (e) {
+								console.warn("[extendedRead] PDF crop failed, using full page:", e);
+								blocks.push({ type: "image", data: png.toString("base64"), mimeType: "image/png" });
+							}
+						} else {
+							blocks.push({ type: "image", data: png.toString("base64"), mimeType: "image/png" });
+						}
 					} finally {
 						pixmap.destroy();
 					}

@@ -45,7 +45,7 @@ export default function activate(pi: ExtensionAPI) {
 			"Images: png, jpg, jpeg, gif, webp, bmp, heic, heif, tiff, tif, tga, avif. " +
 			"Audio: wav, mp3, flac, ogg, aiff, aif, m4a, aac, wma, opus. " +
 			"Video: mp4, webm, mkv, mov, avi. " +
-			"PDF: text extraction (default) or page rendering to image. Use pages='1-5' for pagination, toc=true for outline, search='query' to find text, dpi=N for resolution. " +
+			"PDF: text extraction (default) or page rendering to image. Use pages='1-5' for pagination, toc=true for outline, search='query' to find text, dpi=N for resolution, zoom='{x,y,w,h}' to magnify a region in image mode. " +
 			"PPTX: converts to PDF via @s8fy/pptx-converter, then uses the PDF pipeline. " +
 			"For text files, use the native read tool.",
 		promptSnippet: "Read media files",
@@ -60,6 +60,7 @@ export default function activate(pi: ExtensionAPI) {
 			toc: Type.Optional(Type.Boolean({ description: "PDF: return table of contents/outline" })),
 			search: Type.Optional(Type.String({ description: "PDF: search for text (case-insensitive), returns matching pages with context" })),
 			dpi: Type.Optional(Type.Number({ description: "PDF: DPI for image mode (72-600, default from config)" })),
+			zoom: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number(), w: Type.Number(), h: Type.Number() }, { description: "Region magnification (image mode only). Normalized fractions [0,1] of the page/image bounding box; omit for full frame." })),
 		}),
 		executionMode: executionMode(config),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {

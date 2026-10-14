@@ -555,3 +555,26 @@ test("converted image (tiff) with zoom routes through the resize pipeline (ffmpe
 
 	await rm(dir, { recursive: true });
 });
+
+test("PDF image mode with an overflowing zoom emits the fallback signal and returns the full page", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "zoom-pdf-fallback-"));
+	const pdfBytes = Buffer.from(
+		"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>\nendobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>\nendobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>\nendobj\nxref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n166\n%%EOF\n",
+	);
+	const file = join(dir, "test.pdf");
+	await writeFile(file, pdfBytes);
+
+	// w=2,h=2 overflows the raster; ffmpeg's crop fails, so the crop path falls back to the full page.
+	// The fallback must be model-visible (not a silent server-side warn) so it does not hallucinate a cropped region.
+	const result = await readExtended({ path: file, mode: "image", zoom: { x: 0, y: 0, w: 2, h: 2 } }, { cwd: dir, modelId: "test" }, config);
+	assert.equal(result.isError, undefined);
+	const blocks = result.content as any[];
+	const hintIdx = blocks.findIndex((b) => b.type === "text" && /unavailable/i.test(b.text));
+	const imgIdx = blocks.findIndex((b) => b.type === "image");
+	assert.notEqual(hintIdx, -1, "expected the model-visible zoom-unavailable fallback hint");
+	assert.notEqual(imgIdx, -1, "expected a full-page image block");
+	// The caveat must precede the (full-page) image it qualifies — otherwise the model would read an uncropped frame.
+	assert.ok(hintIdx < imgIdx, "fallback hint should appear before the image block it qualifies");
+
+	await rm(dir, { recursive: true });
+});

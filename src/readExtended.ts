@@ -125,6 +125,9 @@ async function imageDims(inputPath: string): Promise<{ width: number; height: nu
 	return null;
 }
 
+// Appended as a model-visible text block when zoom is requested but cropping fell back to the full frame.
+const ZOOM_UNAVAILABLE_HINT = "zoom region unavailable — returning full page";
+
 /** Crop a region of an image raster (any ffmpeg-decodable input) at normalized [x,y,w,h] fractions, returning the cropped PNG bytes. Returns null if dimensions can't be resolved. */
 export async function cropRegionToPng(inputPath: string, zoom: { x: number; y: number; w: number; h: number }, timeoutMs: number): Promise<Buffer | null> {
 	const dims = await imageDims(inputPath);
@@ -224,17 +227,21 @@ export async function readExtended(
 			};
 		let bytes: Buffer = await readFile(path);
 		let mime = IMAGE_DIRECT[ext];
+		const zoomHints: string[] = [];
 		if (params.zoom) {
 			const cropped = await cropRegionToPng(path, params.zoom, config.defaults.ffmpegTimeoutMs);
 			if (cropped) {
 				bytes = cropped;
 				mime = "image/png";
+			} else {
+				zoomHints.push(ZOOM_UNAVAILABLE_HINT);
 			}
 		}
 		const { data, mimeType } = await processImageBytes(bytes, mime);
 		return {
 			content: [
 				{ type: "text", text: `Read image [${mimeType}]` },
+				...zoomHints.map((h) => ({ type: "text" as const, text: h })),
 				{ type: "image", data, mimeType },
 			],
 		};
@@ -249,14 +256,20 @@ export async function readExtended(
 		const tmp = await ffmpegConvert(path, "png", config.defaults.ffmpegTimeoutMs);
 		try {
 			let bytes: Buffer = await readFile(tmp);
+			const zoomHints: string[] = [];
 			if (params.zoom) {
 				const cropped = await cropRegionToPng(tmp, params.zoom, config.defaults.ffmpegTimeoutMs);
-				if (cropped) bytes = cropped;
+				if (cropped) {
+					bytes = cropped;
+				} else {
+					zoomHints.push(ZOOM_UNAVAILABLE_HINT);
+				}
 			}
 			const { data, mimeType } = await processImageBytes(bytes, "image/png");
 			return {
 				content: [
 					{ type: "text", text: `Read image [${mimeType}]` },
+					...zoomHints.map((h) => ({ type: "text" as const, text: h })),
 					{ type: "image", data, mimeType },
 				],
 			};
@@ -435,10 +448,12 @@ async function readPdf(
 								if (cropped) {
 									blocks.push({ type: "image", data: cropped.toString("base64"), mimeType: "image/png" });
 								} else {
+									blocks.push({ type: "text", text: ZOOM_UNAVAILABLE_HINT });
 									blocks.push({ type: "image", data: png.toString("base64"), mimeType: "image/png" });
 								}
 							} catch (e) {
 								console.warn("[extendedRead] PDF crop failed, using full page:", e);
+								blocks.push({ type: "text", text: ZOOM_UNAVAILABLE_HINT });
 								blocks.push({ type: "image", data: png.toString("base64"), mimeType: "image/png" });
 							}
 						} else {

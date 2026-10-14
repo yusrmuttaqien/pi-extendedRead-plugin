@@ -45,7 +45,7 @@ extendedRead path="doc.pdf" search="quarterly revenue"  → pages matching query
 - **Image mode**: renders pages to PNG at configurable DPI (`dpi` param, default 150). For visual escalation (charts, diagrams, scanned docs).
 - **TOC**: `toc=true` extracts the PDF outline/TOC via `doc.loadOutline()`. Returns hierarchical list with titles and page refs.
 - **Search**: `search='query'` performs case-insensitive text search via `page.search()`. Returns matching pages with 60-char context windows.
-- **Region zoom** (image mode only): `zoom='{x,y,w,h}'` magnifies a region using normalized fractions [0,1] of the page bounding box — resolution-independent. Crop the rendered raster and upscale toward the model's inline budget. Omit for the full page.
+- **Region zoom**: `zoom='{x,y,w,h}'` crops + scales a rectangular region on any image — direct formats (png,jpg,gif,webp,bmp), converted formats (heic,tiff,tif,avif,...) and PDF image mode — using normalized fractions [0,1] of the bounding box. Crop the raster with ffmpeg and upscale toward the model's inline budget; omit for the full page.
 - **Pagination**: the `pages` parameter accepts `"1"`, `"1-5"`, `"3,7,12"`. Default is page 1. The response includes total page count so the model can navigate.
 
 ## Install

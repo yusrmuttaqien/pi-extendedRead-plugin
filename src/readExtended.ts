@@ -157,7 +157,7 @@ export interface ExtendedReadParams {
 	search?: string;
 	/** PDF: DPI for image mode (overrides config default). Range: 72–600. */
 	dpi?: number;
-	/** Region magnification, image mode only. Normalized fractions [0,1] of the page/image bounding box; omit for full frame. */
+	/** Crop + scale a rectangular region on any image — direct formats (png,jpg,gif,webp,bmp), converted formats (heic,tiff,tif,avif,...) and PDF image mode. Normalized [x,y,w,h] fractions 0–1 of the bounding box; omit for full frame. */
 	zoom?: { x: number; y: number; w: number; h: number };
 }
 
@@ -248,7 +248,11 @@ export async function readExtended(
 			};
 		const tmp = await ffmpegConvert(path, "png", config.defaults.ffmpegTimeoutMs);
 		try {
-			const bytes = await readFile(tmp);
+			let bytes: Buffer = await readFile(tmp);
+			if (params.zoom) {
+				const cropped = await cropRegionToPng(tmp, params.zoom, config.defaults.ffmpegTimeoutMs);
+				if (cropped) bytes = cropped;
+			}
 			const { data, mimeType } = await processImageBytes(bytes, "image/png");
 			return {
 				content: [

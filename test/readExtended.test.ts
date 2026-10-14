@@ -538,3 +538,20 @@ test("PDF image mode without zoom is unchanged (full page, no pipeline resize)",
 
 	await rm(dir, { recursive: true });
 });
+
+test("converted image (tiff) with zoom routes through the resize pipeline (ffmpegConvert -> crop -> pi)", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "zoom-conv-"));
+	// Generate a real TIFF into dir; ffmpegConvert down-converts it to PNG, then zoom crops that raster and hands it to pi.
+	const bin = (await import("@ffmpeg-installer/ffmpeg")).path;
+	const file = join(dir, "gen.tif");
+	await new Promise<void>((res, rej) => {
+		execFile(bin, ["-y", "-f", "lavfi", "-i", `color=c=green:s=200x150`, "-frames:v", "1", file], { timeout: 20_000 }, (err) => (err ? rej(err) : res()));
+	});
+
+	// Convertible formats were previously zoom-blind; this asserts the crop path now runs for them too.
+	await expectRoutedThroughPipeline(
+		readExtended({ path: file, zoom: { x: 0, y: 0, w: 0.5, h: 0.5 } }, { cwd: dir, modelId: "test" }, config),
+	);
+
+	await rm(dir, { recursive: true });
+});

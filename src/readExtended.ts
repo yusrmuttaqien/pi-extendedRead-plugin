@@ -116,12 +116,24 @@ function runCmd(binary: string, args: string[]): Promise<{ stdout: string; stder
 async function imageDims(inputPath: string): Promise<{ width: number; height: number } | null> {
 	try {
 		const { stderr } = await runCmd(ffmpeg.path, ["-hide_banner", "-i", inputPath, "-vframes", "1", "-f", "null", "-"]);
-		const m = String(stderr).match(/(\d+)x(\d+)/);
-		if (m && +m[1] > 0 && +m[2] > 0)
-			return { width: +m[1], height: +m[2] };
+		return parseFfmpegDims(stderr);
 	} catch {
 		/* fall through to no-zoom */
 	}
+	return null;
+}
+
+/**
+ * Parse "WxH" from ffmpeg's probe stderr. Anchored to the "Video:" stream descriptor line:
+ * a bare \d+x\d+ also matches ffmpeg's memory pointer (e.g. "[png_pipe @ 0x137808200]"),
+ * which appears first when ffmpeg prints the "not enough frames to estimate rate" warning
+ * and would otherwise yield width=0 and a spurious null. Returns null if no valid
+ * dimensions are present.
+ */
+export function parseFfmpegDims(stderr: string): { width: number; height: number } | null {
+	const m = String(stderr).match(/Video:.*?(\d+)x(\d+)/);
+	if (m && +m[1] > 0 && +m[2] > 0)
+		return { width: +m[1], height: +m[2] };
 	return null;
 }
 

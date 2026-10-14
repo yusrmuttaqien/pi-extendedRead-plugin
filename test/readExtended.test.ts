@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 
-import { readExtended, cropRegionToPng } from "../src/readExtended.js";
+import { readExtended, cropRegionToPng, parseFfmpegDims } from "../src/readExtended.js";
 import type { PluginConfig } from "../src/config.js";
 
 /** Extract text from array content. */
@@ -450,6 +450,36 @@ async function expectRoutedThroughPipeline(promise: Promise<{ content?: any[]; i
 		assert.match(String(e.message ?? e), /resize|Image|Photon/i);
 	}
 }
+
+// --- parseFfmpegDims: guard against the memory-pointer regression ---
+//
+// Real screenshots (and sips re-encodes of them) make ffmpeg print
+// "[png_pipe @ 0x137808200] Stream #0: not enough frames to estimate rate" *before*
+// the "Video: ... WxH" descriptor line. A bare \d+x\d+ regex matched the hex pointer
+// first, yielding width=0 and a spurious null -> "zoom region unavailable". These
+// tests pin the anchored-regex fix without depending on a PNG that triggers the warning.
+
+test("parseFfmpegDims ignores the memory pointer in the 'not enough frames' warning", () => {
+	const stderr =
+		"[png_pipe @ 0x137808200] Stream #0: not enough frames to estimate rate; consider increasing probesize\n" +
+		"Input #0, png_pipe, from '/tmp/x.png':\n" +
+		"  Duration: N/A, bitrate: N/A\n" +
+		"  Stream #0:0: Video: png, rgba(pc, gbr/unknown/unknown), 2560x8944, 25 fps, 25 tbr, 25 tbn\n";
+	assert.deepEqual(parseFfmpegDims(stderr), { width: 2560, height: 8944 });
+});
+
+test("parseFfmpegDims parses a normal probe without the warning", () => {
+	const stderr =
+		"Input #0, png_pipe, from '/tmp/x.png':\n" +
+		"  Duration: N/A, bitrate: N/A\n" +
+		"  Stream #0:0: Video: png, rgba(pc), 1251x4359, 25 fps, 25 tbr, 25 tbn\n";
+	assert.deepEqual(parseFfmpegDims(stderr), { width: 1251, height: 4359 });
+});
+
+test("parseFfmpegDims returns null when no valid Video line is present", () => {
+	assert.equal(parseFfmpegDims("[png_pipe @ 0x137808200] Stream #0: not enough frames"), null);
+	assert.equal(parseFfmpegDims(""), null);
+});
 
 test("cropRegionToPng crops a full-frame fraction to expected dimensions", async () => {
 	const src = await makePng(500, 300, "green");

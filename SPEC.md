@@ -227,6 +227,27 @@ Mirrors native `read`'s flow: resolve → stat → detect → process → return
 - **Memory:** mupdf uses WASM memory (not GC'd). All objects (`doc`, `page`, `pixmap`, `stext`) must be `.destroy()`'d in `finally` blocks.
 - **Config:** `pdf.defaultDpi` (150), `pdf.maxPagesPerCall` (10).
 
+### Region-finding tools (`grid`, `locate`)
+
+Complement `zoom` (above). `zoom` crops a region you already know the coordinates for; these tools **find** the coordinates for a region you can see but not pinpoint in a downscaled overview.
+
+**Why — the per-image resize gate.** Every image is capped at 2000×2000 / 4.5MB before reaching the model (pi's resize core). A tall page (e.g. 8944px) is downscaled to ~2000px, so individual cells/subjects become too small to identify and coordinates must be guessed → guess→verify→tighten. **Tiling defeats the gate:** each tile is small enough to pass the gate un-downscaled, so per-tile thumbnails are sharp and coordinates are exact.
+
+**Shared design.** Both return, per region, a **sharp thumbnail + the region's exact normalized `{x,y,w,h}` bbox**. The model's only job is one visual judgment (which region is the target); the tool does the partitioning/cropping/coordinate math. **Division of labor:** tool = blind work (partition, crop, compute bboxes), model = one reliable visual pick on a sharp image, result = the bridge. **Self-guiding results:** each region's result carries a ready-to-use `zoom={...}` hint, so the next step is copy-paste, not memory.
+
+**`grid` — regular partition (v1).** `grid(path, region, rows, cols)` divides a supplied region into a regular `rows × cols` array by arithmetic (`x = x0 + c·cell_w`, `y = y0 + r·cell_h`). For uniform layouts (dashboards). v2 (auto-detect grid bounds via luminance projection) is future work (§14).
+
+**`locate` — content-driven, coarse-to-fine.** `locate(path, region, tiles)` blindly partitions a region into `tiles × tiles` **overlapping** tiles (~10–20% overlap so a target isn't split at a boundary). The model picks the tile containing the target; if the target is small within that tile, sub-tile it; then `zoom` to the exact bbox. A **quadtree search**: bounded cost (~2 levels ≈ 16× refinement), generalizes to any content (person, object, point) with **no CV**. Finds a **bbox, not a mask** — sufficient for "make it bigger."
+
+**API sketch.**
+```
+grid(path, region?: {x,y,w,h}, rows, cols) → [{ row, col, bbox: {x,y,w,h}, image }]
+locate(path, region?: {x,y,w,h}, tiles?: number) → [{ id, bbox: {x,y,w,h}, image, hint }]
+```
+Both reuse `cropRegionToPng`; `region` defaults to the full frame.
+
+**Guidance.** Tool `description`/`promptGuidelines` name the trigger ("overview too downscaled to identify a specific region/subject") and the workflow shape (tile coarse → pick → sub-tile if needed → zoom). The heavy lifting is in the self-guiding results, not the description.
+
 ## 7. Wire format & serialization
 
 All media uses the **native mechanism**: the tool returns content blocks in the tool result, pi's `convertMessages` serializes them, **no hook, no marker**. This mirrors the native `read` tool's image path exactly.
@@ -357,7 +378,4 @@ The model picks the tool based on file type. There's no conflict: both can handl
 - **Resize options exposure:** whether to let the model control image resize parameters.
 - **DOCX support** — use `mammoth` (npm, pure JS) to extract text directly from DOCX. No PDF conversion needed. Handles headings, paragraphs, tables, lists.
 - **Pages (`.pages`) support** — macOS-only. Convert to PDF via AppleScript/Pages app, then use existing PDF pipeline.
-- **Grid/tile enumeration for deterministic zoom** — a `grid` operation that returns per-cell sharp thumbnails plus each cell's exact normalized `{x,y,w,h}` bbox, so "row R, col C" maps to a known coordinate instead of fractions guessed against a downscaled overview. The per-image resize gate is why the full-page view is blurry (each image is capped at 2000×2000 before reaching the model), which is what forces the current guess→verify→tighten loop. Tiling defeats it: each cell is small enough to pass the gate un-downscaled, so thumbnails are sharp and coordinates are exact.
-  - **v1 (computed):** divide a supplied grid region into a regular `rows × cols` array by arithmetic (`x = x0 + c·cell_w`, `y = y0 + r·cell_h`) — sufficient for uniform dashboard layouts.
-  - **v2 (detected):** auto-detect the grid bounds by luminance projection — scan row/column luminance profiles for the periodic gutters between cards to derive boundaries, handling irregular or variable cell sizes.
-  - **Zoom region readout:** `zoom` echoes back the exact region it produced (normalized + pixel dims), making "did I get the right cell?" a pure yes/no.
+- **Grid v2 (detected) + zoom region readout** — v1 (`grid`, computed) and `locate` (coarse-to-fine tiling) are specified in §6 "Region-finding tools." Remaining: v2 auto-detection of grid bounds (luminance projection of the gutters between cards, for irregular/variable cell sizes), and a `zoom` region readout (echo back the exact region produced — normalized + pixel dims — so "did I get the right cell?" is a pure yes/no).

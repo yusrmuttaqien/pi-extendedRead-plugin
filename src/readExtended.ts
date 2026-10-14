@@ -145,6 +145,16 @@ export async function cropRegionToPng(inputPath: string, zoom: { x: number; y: n
 	const dims = await imageDims(inputPath);
 	if (!dims)
 		return null;
+	return cropRegionToPngWithDims(inputPath, zoom, dims, timeoutMs);
+}
+
+/** Crop a region given pre-computed pixel dimensions (skips the per-call ffmpeg probe). Returns null on failure. */
+export async function cropRegionToPngWithDims(
+	inputPath: string,
+	zoom: { x: number; y: number; w: number; h: number },
+	dims: { width: number; height: number },
+	timeoutMs: number,
+): Promise<Buffer | null> {
 	const W = Math.max(1, Math.round(zoom.w * dims.width));
 	const H = Math.max(1, Math.round(zoom.h * dims.height));
 	const maxX = Math.max(0, dims.width - W);
@@ -158,6 +168,98 @@ export async function cropRegionToPng(inputPath: string, zoom: { x: number; y: n
 	} finally {
 		await unlink(outPath).catch(() => {});
 	}
+}
+
+// --- Region-finding: grid (v1, computed regular partition) ---
+
+export interface GridRegion { x: number; y: number; w: number; h: number }
+export interface GridCell { row: number; col: number; bbox: GridRegion }
+
+/**
+ * Compute a regular `rows × cols` partition of a normalized region. Pure — no
+ * I/O, so it's unit-testable without ffmpeg. Cell (r,c): x = region.x + c·(region.w/cols),
+ * y = region.y + r·(region.h/rows). The model reads "row r, col c" directly from these.
+ */
+export function computeGridCells(region: GridRegion, rows: number, cols: number): GridCell[] {
+	const cellW = region.w / cols;
+	const cellH = region.h / rows;
+	const cells: GridCell[] = [];
+	for (let r = 0; r < rows; r++) {
+		for (let c = 0; c < cols; c++) {
+			cells.push({
+				row: r,
+				col: c,
+				bbox: {
+					x: region.x + c * cellW,
+					y: region.y + r * cellH,
+					w: cellW,
+					h: cellH,
+				},
+			});
+		}
+	}
+	return cells;
+}
+
+/** Format a bbox as a ready-to-use zoom hint with 3-decimal precision. */
+export function formatZoomHint(bbox: GridRegion): string {
+	const r = (n: number) => Math.round(n * 1000) / 1000;
+	return `{x:${r(bbox.x)},y:${r(bbox.y)},w:${r(bbox.w)},h:${r(bbox.h)}}`;
+}
+
+/**
+ * Tile a region of an image into a `rows × cols` grid of sharp per-cell crops.
+ * Probes dimensions once, then crops each cell at full source resolution, so each
+ * cell stays under pi's per-image resize gate and reaches the model sharp.
+ */
+export async function gridRegion(
+	inputPath: string,
+	region: GridRegion,
+	rows: number,
+	cols: number,
+	timeoutMs: number,
+): Promise<(GridCell & { png: Buffer })[]> {
+	const dims = await imageDims(inputPath);
+	if (!dims)
+		return [];
+	const cells = computeGridCells(region, rows, cols);
+	const out: (GridCell & { png: Buffer })[] = [];
+	for (const cell of cells) {
+		const png = await cropRegionToPngWithDims(inputPath, cell.bbox, dims, timeoutMs);
+		if (png)
+			out.push({ ...cell, png });
+	}
+	return out;
+}
+
+/** Cap to keep context bounded (7×7). Larger grids are rejected with a clear message. */
+const GRID_MAX_CELLS = 49;
+
+/** Render a grid as interleaved text+image content blocks: one sharp thumbnail + zoom hint per cell. */
+async function renderGrid(
+	inputPath: string,
+	grid: { rows: number; cols: number; region?: GridRegion },
+	config: PluginConfig,
+): Promise<AgentToolResult["content"]> {
+	const region = grid.region ?? { x: 0, y: 0, w: 1, h: 1 };
+	if (grid.rows < 1 || grid.cols < 1)
+		return [{ type: "text", text: `grid: rows and cols must be >= 1 (got ${grid.rows}×${grid.cols})` }];
+	if (grid.rows * grid.cols > GRID_MAX_CELLS)
+		return [{ type: "text", text: `grid: ${grid.rows}×${grid.cols} = ${grid.rows * grid.cols} cells exceeds the ${GRID_MAX_CELLS}-cell cap (7×7). Use a smaller grid or a sub-region.` }];
+	const cells = await gridRegion(inputPath, region, grid.rows, grid.cols, config.defaults.ffmpegTimeoutMs);
+	if (cells.length === 0)
+		return [{ type: "text", text: `grid: could not resolve image dimensions — no cells produced` }];
+	const blocks: AgentToolResult["content"] = [];
+	for (const cell of cells) {
+		const { data, mimeType } = await processImageBytes(cell.png, "image/png");
+		blocks.push({ type: "text", text: `cell (row ${cell.row}, col ${cell.col}) — zoom=${formatZoomHint(cell.bbox)}` });
+		blocks.push({ type: "image", data, mimeType });
+	}
+	blocks.push({
+		type: "text",
+		text: `Grid: ${grid.rows}×${grid.cols} over region ${formatZoomHint(region)}. Use any cell's zoom={...} above with the zoom param to crop it sharp.`,
+	});
+	return blocks;
 }
 
 // --- Main ---
@@ -174,6 +276,8 @@ export interface ExtendedReadParams {
 	dpi?: number;
 	/** Crop + scale a rectangular region on any image — direct formats (png,jpg,gif,webp,bmp), converted formats (heic,tiff,tif,avif,...) and PDF image mode. Normalized [x,y,w,h] fractions 0–1 of the bounding box; omit for full frame. */
 	zoom?: { x: number; y: number; w: number; h: number };
+	/** Tile a region into a regular rows×cols grid of sharp per-cell crops, each with its exact normalized bbox + a ready-to-use zoom hint. */
+	grid?: { rows: number; cols: number; region?: { x: number; y: number; w: number; h: number } };
 }
 
 export interface ExtendedReadContext {
@@ -237,6 +341,8 @@ export async function readExtended(
 			return {
 				content: [{ type: "text", text: "Model does not support images" }],
 			};
+		if (params.grid)
+			return { content: await renderGrid(path, params.grid, config) };
 		let bytes: Buffer = await readFile(path);
 		let mime = IMAGE_DIRECT[ext];
 		const zoomHints: string[] = [];
@@ -267,6 +373,8 @@ export async function readExtended(
 			};
 		const tmp = await ffmpegConvert(path, "png", config.defaults.ffmpegTimeoutMs);
 		try {
+			if (params.grid)
+				return { content: await renderGrid(tmp, params.grid, config) };
 			let bytes: Buffer = await readFile(tmp);
 			const zoomHints: string[] = [];
 			if (params.zoom) {

@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 
-import { readExtended, cropRegionToPng, parseFfmpegDims } from "../src/readExtended.js";
+import { readExtended, cropRegionToPng, parseFfmpegDims, computeGridCells, formatZoomHint, gridRegion } from "../src/readExtended.js";
 import type { PluginConfig } from "../src/config.js";
 
 /** Extract text from array content. */
@@ -582,6 +582,73 @@ test("converted image (tiff) with zoom routes through the resize pipeline (ffmpe
 	await expectRoutedThroughPipeline(
 		readExtended({ path: file, zoom: { x: 0, y: 0, w: 0.5, h: 0.5 } }, { cwd: dir, modelId: "test" }, config),
 	);
+
+	await rm(dir, { recursive: true });
+});
+
+// --- Grid (v1, computed regular partition) tests ---
+
+test("computeGridCells partitions the full frame into a regular grid", () => {
+	const cells = computeGridCells({ x: 0, y: 0, w: 1, h: 1 }, 2, 3);
+	assert.equal(cells.length, 6);
+	assert.deepEqual(cells[0], { row: 0, col: 0, bbox: { x: 0, y: 0, w: 1 / 3, h: 1 / 2 } });
+	assert.deepEqual(cells[5], { row: 1, col: 2, bbox: { x: 2 / 3, y: 1 / 2, w: 1 / 3, h: 1 / 2 } });
+});
+
+test("computeGridCells offsets a sub-region", () => {
+	const cells = computeGridCells({ x: 0.5, y: 0.3, w: 0.4, h: 0.6 }, 1, 2);
+	assert.equal(cells.length, 2);
+	assert.deepEqual(cells[0].bbox, { x: 0.5, y: 0.3, w: 0.2, h: 0.6 });
+	assert.deepEqual(cells[1].bbox, { x: 0.7, y: 0.3, w: 0.2, h: 0.6 });
+});
+
+test("formatZoomHint rounds to 3 decimals and formats a ready-to-use zoom param", () => {
+	assert.equal(formatZoomHint({ x: 0.5, y: 0.333333, w: 0.166667, h: 0.045 }), "{x:0.5,y:0.333,w:0.167,h:0.045}");
+	assert.equal(formatZoomHint({ x: 0, y: 0, w: 1, h: 1 }), "{x:0,y:0,w:1,h:1}");
+});
+
+test("gridRegion crops each cell at full source resolution", async () => {
+	const src = await makePng(500, 300, "green");
+	try {
+		const cells = await gridRegion(src, { x: 0, y: 0, w: 1, h: 1 }, 2, 2, 30_000);
+		assert.equal(cells.length, 4);
+		// each cell is 250×150 (half of 500×300)
+		for (const cell of cells) {
+			assert.deepEqual(pngDims(cell.png), [250, 150]);
+		}
+		assert.deepEqual(cells[0].bbox, { x: 0, y: 0, w: 0.5, h: 0.5 });
+	} finally {
+		await rm(src.split("/").slice(0, -1).join("/"), { recursive: true });
+	}
+});
+
+test("gridRegion returns [] when dimensions cannot be resolved", async () => {
+	const cells = await gridRegion("/tmp/__does_not_exist_grid__.png", { x: 0, y: 0, w: 1, h: 1 }, 2, 2, 5_000);
+	assert.deepEqual(cells, []);
+});
+
+test("direct image with grid routes through the resize pipeline (tile then pi)", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "grid-img-"));
+	const file = await makePng(200, 150, "green", dir);
+
+	// Grid routes each cropped cell through processImageBytes (tile -> pi pipeline).
+	await expectRoutedThroughPipeline(
+		readExtended({ path: file, grid: { rows: 2, cols: 2 } }, { cwd: dir, modelId: "test" }, config),
+	);
+
+	await rm(dir, { recursive: true });
+});
+
+test("grid rejects an oversized grid with a clear message", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "grid-cap-"));
+	const file = await makePng(200, 150, "green", dir);
+
+	const result = await readExtended(
+		{ path: file, grid: { rows: 10, cols: 10 } },
+		{ cwd: dir, modelId: "test" },
+		config,
+	);
+	assert.match(text(result.content as any), /exceeds the 49-cell cap/);
 
 	await rm(dir, { recursive: true });
 });

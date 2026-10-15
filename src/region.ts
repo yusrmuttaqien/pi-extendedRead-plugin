@@ -145,31 +145,50 @@ export async function locateRegion(
 
 // --- Render (interleaved text+image content blocks) ---
 
+type ContentBlock = { type: string; text?: string; data?: string; mimeType?: string };
+
+/** Shared tile-rendering loop: process each tile's PNG through pi, interleave text label + image block. */
+async function renderTiles(
+	tiles: { row: number; col: number; bbox: GridRegion; png: Buffer }[],
+	label: (t: { row: number; col: number; bbox: GridRegion }) => string,
+	summary: string,
+): Promise<ContentBlock[]> {
+	const blocks: ContentBlock[] = [];
+	for (const tile of tiles) {
+		const { data, mimeType } = await processImageBytes(tile.png, "image/png");
+		blocks.push({ type: "text", text: label(tile) });
+		blocks.push({ type: "image", data, mimeType });
+	}
+	blocks.push({ type: "text", text: summary });
+	return blocks;
+}
+
+/** Shared validation for grid/locate params. Returns an error block or null if valid. */
+function validateTileParams(rows: number, cols: number, prefix: string, noun: string): ContentBlock[] | null {
+	if (rows < 1 || cols < 1)
+		return [{ type: "text", text: `${prefix}: rows and cols must be >= 1 (got ${rows}×${cols})` }];
+	if (rows * cols > GRID_MAX_CELLS)
+		return [{ type: "text", text: `${prefix}: ${rows}×${cols} = ${rows * cols} ${noun}s exceeds the ${GRID_MAX_CELLS}-${noun} cap (7×7). Use a smaller ${noun} count or a sub-region.` }];
+	return null;
+}
+
 /** Render a grid as interleaved text+image content blocks: one sharp thumbnail + zoom hint per cell. */
 export async function renderGrid(
 	inputPath: string,
 	grid: { rows: number; cols: number; region?: GridRegion },
 	config: PluginConfig,
-): Promise<{ type: string; text?: string; data?: string; mimeType?: string }[]> {
+): Promise<ContentBlock[]> {
 	const region = grid.region ?? { x: 0, y: 0, w: 1, h: 1 };
-	if (grid.rows < 1 || grid.cols < 1)
-		return [{ type: "text", text: `grid: rows and cols must be >= 1 (got ${grid.rows}×${grid.cols})` }];
-	if (grid.rows * grid.cols > GRID_MAX_CELLS)
-		return [{ type: "text", text: `grid: ${grid.rows}×${grid.cols} = ${grid.rows * grid.cols} cells exceeds the ${GRID_MAX_CELLS}-cell cap (7×7). Use a smaller grid or a sub-region.` }];
+	const invalid = validateTileParams(grid.rows, grid.cols, "grid", "cell");
+	if (invalid) return invalid;
 	const cells = await gridRegion(inputPath, region, grid.rows, grid.cols, config.defaults.ffmpegTimeoutMs);
 	if (cells.length === 0)
 		return [{ type: "text", text: `grid: could not resolve image dimensions — no cells produced` }];
-	const blocks: { type: string; text?: string; data?: string; mimeType?: string }[] = [];
-	for (const cell of cells) {
-		const { data, mimeType } = await processImageBytes(cell.png, "image/png");
-		blocks.push({ type: "text", text: `cell (row ${cell.row}, col ${cell.col}) — zoom=${formatZoomHint(cell.bbox)}` });
-		blocks.push({ type: "image", data, mimeType });
-	}
-	blocks.push({
-		type: "text",
-		text: `Grid: ${grid.rows}×${grid.cols} over region ${formatZoomHint(region)}. Use any cell's zoom={...} above with the zoom param to crop it sharp.`,
-	});
-	return blocks;
+	return renderTiles(
+		cells,
+		(c) => `cell (row ${c.row}, col ${c.col}) — zoom=${formatZoomHint(c.bbox)}`,
+		`Grid: ${grid.rows}×${grid.cols} over region ${formatZoomHint(region)}. Use any cell's zoom={...} above with the zoom param to crop it sharp.`,
+	);
 }
 
 /** Render a locate tiling as interleaved text+image content blocks: one sharp tile + bbox + zoom hint per tile. */
@@ -177,30 +196,22 @@ export async function renderLocate(
 	inputPath: string,
 	params: { rows?: number; cols?: number; overlap?: number; region?: GridRegion },
 	config: PluginConfig,
-): Promise<{ type: string; text?: string; data?: string; mimeType?: string }[]> {
+): Promise<ContentBlock[]> {
 	const region = params.region ?? { x: 0, y: 0, w: 1, h: 1 };
 	const rows = params.rows ?? 4;
 	const cols = params.cols ?? 4;
 	const overlap = params.overlap ?? 0.15;
 
-	if (rows < 1 || cols < 1)
-		return [{ type: "text", text: `locate: rows and cols must be >= 1 (got ${rows}×${cols})` }];
-	if (rows * cols > GRID_MAX_CELLS)
-		return [{ type: "text", text: `locate: ${rows}×${cols} = ${rows * cols} tiles exceeds the ${GRID_MAX_CELLS}-tile cap (7×7). Use a smaller tile count or a sub-region.` }];
+	const invalid = validateTileParams(rows, cols, "locate", "tile");
+	if (invalid) return invalid;
 
 	const tiles = await locateRegion(inputPath, region, rows, cols, overlap, config.defaults.ffmpegTimeoutMs);
 	if (tiles.length === 0)
 		return [{ type: "text", text: `locate: could not resolve image dimensions — no tiles produced` }];
 
-	const blocks: { type: string; text?: string; data?: string; mimeType?: string }[] = [];
-	for (const tile of tiles) {
-		const { data, mimeType } = await processImageBytes(tile.png, "image/png");
-		blocks.push({ type: "text", text: `tile (row ${tile.row}, col ${tile.col}) — bbox ${formatZoomHint(tile.bbox)} — To crop: zoom=${formatZoomHint(tile.bbox)}` });
-		blocks.push({ type: "image", data, mimeType });
-	}
-	blocks.push({
-		type: "text",
-		text: `Locate: ${rows}×${cols} tiles (${Math.round(overlap * 100)}% overlap) over region ${formatZoomHint(region)}. Pick the tile containing your target, then use its zoom={...} to crop sharp. If the target is small within the tile, call locate again on that tile's region for a finer sub-tile.`,
-	});
-	return blocks;
+	return renderTiles(
+		tiles,
+		(t) => `tile (row ${t.row}, col ${t.col}) — bbox ${formatZoomHint(t.bbox)} — To crop: zoom=${formatZoomHint(t.bbox)}`,
+		`Locate: ${rows}×${cols} tiles (${Math.round(overlap * 100)}% overlap) over region ${formatZoomHint(region)}. Pick the tile containing your target, then use its zoom={...} to crop sharp. If the target is small within the tile, call locate again on that tile's region for a finer sub-tile.`,
+	);
 }

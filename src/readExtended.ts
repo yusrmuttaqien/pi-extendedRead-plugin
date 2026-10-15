@@ -117,6 +117,41 @@ export interface AgentToolResult {
 	isError?: boolean;
 }
 
+// --- Shared image handler ---
+
+/**
+ * Process image bytes with optional zoom crop, returning content blocks.
+ * Shared by direct and convert image handlers.
+ */
+async function processImageContent(
+	bytes: Buffer,
+	mime: string,
+	zoom: { x: number; y: number; w: number; h: number } | undefined,
+	inputPath: string,
+	timeoutMs: number,
+): Promise<{ content: { type: string; text?: string; data?: string; mimeType?: string }[] }> {
+	const zoomHints: string[] = [];
+	let finalBytes = bytes;
+	let finalMime = mime;
+	if (zoom) {
+		const cropped = await cropRegionToPng(inputPath, zoom, timeoutMs);
+		if (cropped) {
+			finalBytes = cropped;
+			finalMime = "image/png";
+		} else {
+			zoomHints.push(ZOOM_UNAVAILABLE_HINT);
+		}
+	}
+	const { data, mimeType } = await processImageBytes(finalBytes, finalMime);
+	return {
+		content: [
+			{ type: "text", text: `Read image [${mimeType}]` },
+			...zoomHints.map((h) => ({ type: "text" as const, text: h })),
+			{ type: "image", data, mimeType },
+		],
+	};
+}
+
 // --- Main dispatch ---
 
 export async function readExtended(
@@ -173,26 +208,8 @@ export async function readExtended(
 			return { content: await renderGrid(path, params.grid, config) };
 		if (params.locate)
 			return { content: await renderLocate(path, params.locate, config) };
-		let bytes: Buffer = await readFile(path);
-		let mime = IMAGE_DIRECT[ext];
-		const zoomHints: string[] = [];
-		if (params.zoom) {
-			const cropped = await cropRegionToPng(path, params.zoom, config.defaults.ffmpegTimeoutMs);
-			if (cropped) {
-				bytes = cropped;
-				mime = "image/png";
-			} else {
-				zoomHints.push(ZOOM_UNAVAILABLE_HINT);
-			}
-		}
-		const { data, mimeType } = await processImageBytes(bytes, mime);
-		return {
-			content: [
-				{ type: "text", text: `Read image [${mimeType}]` },
-				...zoomHints.map((h) => ({ type: "text" as const, text: h })),
-				{ type: "image", data, mimeType },
-			],
-		};
+		const bytes: Buffer = await readFile(path);
+		return processImageContent(bytes, IMAGE_DIRECT[ext], params.zoom, path, config.defaults.ffmpegTimeoutMs);
 	}
 
 	// --- Image convertible ---
@@ -207,24 +224,8 @@ export async function readExtended(
 				return { content: await renderGrid(tmp, params.grid, config) };
 			if (params.locate)
 				return { content: await renderLocate(tmp, params.locate, config) };
-			let bytes: Buffer = await readFile(tmp);
-			const zoomHints: string[] = [];
-			if (params.zoom) {
-				const cropped = await cropRegionToPng(tmp, params.zoom, config.defaults.ffmpegTimeoutMs);
-				if (cropped) {
-					bytes = cropped;
-				} else {
-					zoomHints.push(ZOOM_UNAVAILABLE_HINT);
-				}
-			}
-			const { data, mimeType } = await processImageBytes(bytes, "image/png");
-			return {
-				content: [
-					{ type: "text", text: `Read image [${mimeType}]` },
-					...zoomHints.map((h) => ({ type: "text" as const, text: h })),
-					{ type: "image", data, mimeType },
-				],
-			};
+			const bytes: Buffer = await readFile(tmp);
+			return processImageContent(bytes, "image/png", params.zoom, tmp, config.defaults.ffmpegTimeoutMs);
 		} finally {
 			await unlink(tmp).catch(() => {});
 		}

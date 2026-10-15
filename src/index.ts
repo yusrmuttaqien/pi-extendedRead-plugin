@@ -65,13 +65,13 @@ export default function activate(pi: ExtensionAPI) {
 				rows: Type.Number({ description: "Number of rows (>= 1)" }),
 				cols: Type.Number({ description: "Number of columns (>= 1)" }),
 				region: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number(), w: Type.Number(), h: Type.Number() }, { description: "Normalized [x,y,w,h] region to tile (default: full frame)" })),
-			}, { description: "Tile a region of an image into a regular rows×cols grid of sharp per-cell crops, each returned with its exact normalized bbox + a ready-to-use zoom={...} hint. Use when you need a specific cell/region in a large image and the full-page view is too downscaled to identify it. Cap: 49 cells (7×7)." })),
+			}, { description: "Tile a region of an image into a regular rows×cols grid of sharp per-cell crops, each returned with its exact normalized bbox + a ready-to-use zoom={...} hint. Works on direct formats (png,jpg,gif,webp,bmp), converted formats (heic,tiff,tif,avif,...) and PDF image mode. Use when you need a specific cell/region in a large image and the full-page view is too downscaled to identify it. Cap: 49 cells (7×7)." })),
 			locate: Type.Optional(Type.Object({
 				rows: Type.Optional(Type.Number({ description: "Number of tile rows (default 4)" })),
 				cols: Type.Optional(Type.Number({ description: "Number of tile columns (default 4)" })),
 				overlap: Type.Optional(Type.Number({ description: "Overlap fraction between adjacent tiles (default 0.15, range 0–0.5)" })),
 				region: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number(), w: Type.Number(), h: Type.Number() }, { description: "Normalized [x,y,w,h] region to tile (default: full frame)" })),
-			}, { description: "Coarse-to-fine tiling with overlap: tile a region into rows×cols sharp tiles, each extended into its neighbor by `overlap` fraction so targets on tile boundaries are fully inside at least one tile. Use when you need to find a specific object/region in a large image and the full-page view is too downscaled to identify it. The model picks the tile containing the target, then uses its zoom={...} hint to crop sharp. Cap: 49 tiles (7×7)." })),
+			}, { description: "Coarse-to-fine tiling with overlap: tile a region into rows×cols sharp tiles, each extended into its neighbor by `overlap` fraction so targets on tile boundaries are fully inside at least one tile. Works on direct formats (png,jpg,gif,webp,bmp), converted formats (heic,tiff,tif,avif,...) and PDF image mode. Use when you need to find a specific object/region in a large image and the full-page view is too downscaled to identify it. The model picks the tile containing the target, then uses its zoom={...} hint to crop sharp. Cap: 49 tiles (7×7)." })),
 		}),
 		executionMode: executionMode(config),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {

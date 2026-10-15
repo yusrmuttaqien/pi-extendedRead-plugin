@@ -45,7 +45,7 @@ export default function activate(pi: ExtensionAPI) {
 			"Images: png, jpg, jpeg, gif, webp, bmp, heic, heif, tiff, tif, tga, avif. " +
 			"Audio: wav, mp3, flac, ogg, aiff, aif, m4a, aac, wma, opus. " +
 			"Video: mp4, webm, mkv, mov, avi. " +
-			"PDF: text extraction (default) or page rendering to image. Use pages='1-5' for pagination, toc=true for outline, search='query' to find text, dpi=N for resolution, zoom='{x,y,w,h}' to crop+scale a rectangular region on any image — direct or converted formats and PDF image mode. grid={rows,cols[,region]} tiles a region into a regular grid of sharp per-cell crops, each with its exact zoom={...} hint — use it to pinpoint a cell/subject in a large image whose full-page view is too downscaled to read. " +
+			"PDF: text extraction (default) or page rendering to image. Use pages='1-5' for pagination, toc=true for outline, search='query' to find text, dpi=N for resolution, zoom='{x,y,w,h}' to crop+scale a rectangular region on any image — direct or converted formats and PDF image mode. grid={rows,cols[,region]} tiles a region into a regular grid of sharp per-cell crops, each with its exact zoom={...} hint — use it to pinpoint a cell/subject in a large image whose full-page view is too downscaled to read. locate={rows,cols[,region,overlap]} does coarse-to-fine tiling with overlap: the tool tiles a region into overlapping tiles, the model picks the tile containing the target, then drills in with zoom. " +
 			"PPTX: converts to PDF via @s8fy/pptx-converter, then uses the PDF pipeline. " +
 			"For text files, use the native read tool.",
 		promptSnippet: "Read media files",

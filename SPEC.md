@@ -108,6 +108,8 @@ defineTool({
     search: Type.Optional(Type.String({ description: "PDF: search for text (case-insensitive), returns matching pages with context" })),
     dpi: Type.Optional(Type.Number({ description: "PDF: DPI for image mode (72-600, default from config)" })),
     zoom: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number(), w: Type.Number(), h: Type.Number() }, { description: "Crop + scale a rectangular region on any image — direct formats (png,jpg,gif,webp,bmp), converted formats (heic,tiff,tif,avif,...) and PDF image mode. Normalized [x,y,w,h] fractions 0–1 of the bounding box; omit for full frame." })),
+    grid: Type.Optional(Type.Object({ rows: Type.Number(), cols: Type.Number(), region: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number(), w: Type.Number(), h: Type.Number() })) }, { description: "Tile a region into a regular grid of sharp per-cell crops, each with its exact zoom={...} hint. Use to pinpoint a cell/subject in a large image whose full-page view is too downscaled to read." })),
+    locate: Type.Optional(Type.Object({ rows: Type.Number(), cols: Type.Number(), region: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number(), w: Type.Number(), h: Type.Number() })), overlap: Type.Optional(Type.Number()) }, { description: "Coarse-to-fine tiling with overlap: tiles a region into overlapping tiles, the model picks the tile containing the target, then drills in with zoom. Defaults: 4×4, 15% overlap, full frame." })),
   }),
   executionMode: config.defaults.executionMode,
   async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -142,6 +144,9 @@ async function readExtended(params, ctx): Promise<AgentToolResult> {
   if (IMAGE_DIRECT[ext]) {
     if (!input.includes("image")) return note("Model does not support images");
     const bytes = await fs.readFile(path);
+    // zoom: crop region → processImageBytes(cropped)
+    // grid: computeGridCells → N × cropRegionToPng → N × processImageBytes
+    // locate: computeLocateTiles → N × cropRegionToPng → N × processImageBytes
     const { data, mimeType } = await processImage(bytes, MIME[ext]);
     return ok([txt(`Read image [${mimeType}]`), img(data, mimeType)]);
   }
@@ -149,6 +154,7 @@ async function readExtended(params, ctx): Promise<AgentToolResult> {
     if (!input.includes("image")) return note("Model does not support images");
     const tmp = await ffmpegConvert(path, "png");
     const bytes = await fs.readFile(tmp); rm(tmp);
+    // zoom/grid/locate: same crop routing as direct (on the converted raster)
     const { data, mimeType } = await processImage(bytes, "image/png");
     return ok([txt(`Read image [${mimeType}]`), img(data, mimeType)]);
   }

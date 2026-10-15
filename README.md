@@ -26,6 +26,16 @@ The model calls `extendedRead` with a file path. The tool:
 
 pi's `convertMessages` serializes these blocks into the provider payload (`image_url`/`input_audio`/`input_video`). This requires a **patch** to pi's provider bundle and compaction — applied automatically on plugin load.
 
+## Region-finding tools
+
+For large images (screenshots, tall pages) where the full-frame view is too downscaled to read details, three complementary parameters drill into specific regions:
+
+- **`zoom`** — crop + scale a rectangular region. Normalized `[x, y, w, h]` fractions 0–1 of the image. Works on direct formats, converted formats, and PDF image mode.
+- **`grid`** — tile a region into a regular grid of sharp per-cell crops. Each cell carries its exact `zoom={...}` hint for follow-up. Use when the layout is known (card grids, tables).
+- **`locate`** — coarse-to-fine tiling with overlap. The tool tiles a region into overlapping tiles (default 4×4, 15% overlap), the model picks the tile containing the target, then drills in with `zoom`. Use when the target location is unknown.
+
+All three work on any image format (direct, converted, PDF image mode). Cap: 49 cells/tiles per call.
+
 ## PDF reading
 
 PDFs support text extraction, visual rendering, table of contents, and text search:

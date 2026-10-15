@@ -237,12 +237,17 @@ Complement `zoom` (above). `zoom` crops a region you already know the coordinate
 
 **`grid` — regular partition (v1).** `grid(path, region, rows, cols)` divides a supplied region into a regular `rows × cols` array by arithmetic (`x = x0 + c·cell_w`, `y = y0 + r·cell_h`). For uniform layouts (dashboards). v2 (auto-detect grid bounds via luminance projection) is future work (§14).
 
-**`locate` — content-driven, coarse-to-fine.** `locate(path, region, tiles)` blindly partitions a region into `tiles × tiles` **overlapping** tiles (~10–20% overlap so a target isn't split at a boundary). The model picks the tile containing the target; if the target is small within that tile, sub-tile it; then `zoom` to the exact bbox. A **quadtree search**: bounded cost (~2 levels ≈ 16× refinement), generalizes to any content (person, object, point) with **no CV**. Finds a **bbox, not a mask** — sufficient for "make it bigger."
+**`locate` — coarse-to-fine tiling with overlap (v1).** `locate(path, region, rows, cols, overlap)` partitions a region into `rows × cols` **overlapping** tiles. Each tile extends into its neighbor by `overlap` fraction of the base tile size (default 0.15, i.e. 15% overlap), so a target near a tile boundary is fully inside at least one tile. The model picks the tile containing the target; if the target is small within that tile, call `locate` again on that tile's region for a finer sub-tile; then `zoom` to the exact bbox. A **coarse-to-fine search**: bounded cost (~2 levels ≈ 16 tiles + 16 sub-tiles = 32 crops), generalizes to any content (person, object, point) with **no CV**. Finds a **bbox, not a mask** — sufficient for "make it bigger."
 
-**API sketch.**
+- **Tile computation:** `computeLocateTiles(region, rows, cols, overlap)` — pure function. Tile (r,c) starts at `(region.x + c·baseW, region.y + r·baseH)` with dimensions `baseW·(1+overlap) × baseH·(1+overlap)`, clamped to the region boundary. Zero overlap equals a regular grid (verified by test).
+- **Crop pipeline:** `locateRegion` probes dimensions once, then crops each tile at full source resolution via `cropRegionToPngWithDims` — same pattern as `grid`.
+- **Rendering:** `renderLocate` emits interleaved text+image blocks: one sharp tile + bbox + zoom hint per tile, plus a trailing summary with sub-tile guidance.
+- **Defaults:** 4×4 tiles, 15% overlap, full frame. Cap: 49 tiles (7×7).
+
+**API.**
 ```
 grid(path, region?: {x,y,w,h}, rows, cols) → [{ row, col, bbox: {x,y,w,h}, image }]
-locate(path, region?: {x,y,w,h}, tiles?: number) → [{ id, bbox: {x,y,w,h}, image, hint }]
+locate(path, region?: {x,y,w,h}, rows?, cols?, overlap?) → [{ row, col, bbox: {x,y,w,h}, image }]
 ```
 Both reuse `cropRegionToPng`; `region` defaults to the full frame.
 
@@ -378,4 +383,4 @@ The model picks the tool based on file type. There's no conflict: both can handl
 - **Resize options exposure:** whether to let the model control image resize parameters.
 - **DOCX support** — use `mammoth` (npm, pure JS) to extract text directly from DOCX. No PDF conversion needed. Handles headings, paragraphs, tables, lists.
 - **Pages (`.pages`) support** — macOS-only. Convert to PDF via AppleScript/Pages app, then use existing PDF pipeline.
-- **Grid v2 (detected) + zoom region readout** — v1 (`grid`, computed) and `locate` (coarse-to-fine tiling) are specified in §6 "Region-finding tools." Remaining: v2 auto-detection of grid bounds (luminance projection of the gutters between cards, for irregular/variable cell sizes), and a `zoom` region readout (echo back the exact region produced — normalized + pixel dims — so "did I get the right cell?" is a pure yes/no).
+- **Grid v2 (detected) + zoom region readout** — v1 (`grid`, computed) and `locate` (coarse-to-fine tiling with overlap) are implemented and tested (see §6 "Region-finding tools"). Remaining: v2 auto-detection of grid bounds (luminance projection of the gutters between cards, for irregular/variable cell sizes), and a `zoom` region readout (echo back the exact region produced — normalized + pixel dims — so "did I get the right cell?" is a pure yes/no).

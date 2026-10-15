@@ -2,7 +2,7 @@
 
 Pi extension: `extendedRead` tool for media files (images, audio, video, PDF, PPTX) with native serialization.
 
-Built with [llama.cpp](https://github.com/ggml-org/llama.cpp) for local multimodal inference. Media modality is gated by model capabilities in `config.json` — configure per-model support for images, audio, and video.
+Media modality is gated by model capabilities in `config.json` — configure per-model support for images, audio, and video.
 
 Complements pi's native `read` tool (text + basic images) by adding:
 - Extended image formats (heic, heif, tiff, tif, tga, avif)
@@ -123,11 +123,12 @@ The `$docs` key in the file documents every setting.
 
 ## Pi patches
 
-The plugin patches two files in pi's install:
+The plugin patches three targets in pi's install:
 
 | Target | File | Change |
 |---|---|---|
-| `convertMessages` | `dist/bundle/chunks/openai-completions-*.js` | Audio/video block serialization |
+| `convertMessages` | `dist/bundle/chunks/openai-completions-*.js` | Add `audio`/`video` to block detection |
+| `convertMessagesBlocks` | `dist/bundle/chunks/openai-completions-*.js` | Map `audio`/`video` blocks to `input_audio`/`input_video` |
 | `compaction` | `dist/core/compaction/compaction.js` | Size estimation for audio/video |
 
 Patches are idempotent (sentinel-checked) and versioned. After a pi update, run `/extended-read-patch` to re-apply. See `PATCHES.md` for the maintenance checklist.

@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import type { PluginConfig } from "./config.js";
 import { cropRegionToPng, ZOOM_UNAVAILABLE_HINT } from "./ffmpeg.js";
+import { renderGrid, renderLocate } from "./region.js";
 
 /**
  * Read a PDF: text extraction, image rendering, TOC, search.
@@ -18,7 +19,7 @@ import { cropRegionToPng, ZOOM_UNAVAILABLE_HINT } from "./ffmpeg.js";
  */
 export async function readPdf(
 	path: string,
-	params: { pages?: string; mode?: "text" | "image"; toc?: boolean; search?: string; dpi?: number; zoom?: { x: number; y: number; w: number; h: number } },
+	params: { pages?: string; mode?: "text" | "image"; toc?: boolean; search?: string; dpi?: number; zoom?: { x: number; y: number; w: number; h: number }; grid?: { rows: number; cols: number; region?: { x: number; y: number; w: number; h: number } }; locate?: { rows?: number; cols?: number; overlap?: number; region?: { x: number; y: number; w: number; h: number } } },
 	config: PluginConfig,
 	input: string[],
 ): Promise<{ content: { type: string; text?: string; data?: string; mimeType?: string }[]; isError?: boolean }> {
@@ -49,6 +50,34 @@ export async function readPdf(
 			return {
 				content: [{ type: "text", text: "Model does not support images (required for PDF image mode)" }],
 			};
+		}
+
+		// --- Grid/locate: render first page to temp PNG, tile it ---
+		if (mode === "image" && (params.grid || params.locate)) {
+			const page = doc.loadPage(pageIndices[0]);
+			try {
+				const pixmap = page.toPixmap(
+					mupdf.Matrix.scale(dpi / 72, dpi / 72),
+					mupdf.ColorSpace.DeviceRGB,
+				);
+			try {
+					const png = Buffer.from(pixmap.asPNG());
+					const tmpInput = join(tmpdir(), `pi-pdf-${process.pid}-${randomUUID()}.png`);
+					await writeFile(tmpInput, png);
+					try {
+						if (params.grid)
+							return { content: await renderGrid(tmpInput, params.grid, config) };
+						if (params.locate)
+							return { content: await renderLocate(tmpInput, params.locate, config) };
+					} finally {
+						await unlink(tmpInput).catch(() => {});
+					}
+				} finally {
+					pixmap.destroy();
+				}
+			} finally {
+				page.destroy();
+			}
 		}
 
 		const blocks: { type: string; text?: string; data?: string; mimeType?: string }[] = [];

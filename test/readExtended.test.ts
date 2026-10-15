@@ -12,7 +12,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 
-import { readExtended, cropRegionToPng, parseFfmpegDims, computeGridCells, formatZoomHint, gridRegion, computeLocateTiles, locateRegion } from "../src/readExtended.js";
+import { readExtended } from "../src/readExtended.js";
+import { cropRegionToPng, parseFfmpegDims } from "../src/ffmpeg.js";
+import { computeGridCells, formatZoomHint, gridRegion, computeLocateTiles, locateRegion } from "../src/region.js";
 import type { PluginConfig } from "../src/config.js";
 
 /** Extract text from array content. */

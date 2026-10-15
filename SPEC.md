@@ -10,6 +10,7 @@ Provide the model with a dedicated tool for media files. The native `read` tool 
 - Audio (wav, mp3, flac, ogg, aiff, aif, m4a, aac, wma, opus).
 - Video (mp4, webm, mkv, mov, avi).
 - **PDF** (text extraction + visual page rendering, with pagination).
+- **PPTX** (converts to PDF via @s8fy/pptx-converter, then uses the PDF pipeline).
 
 Media enters the context **lazily** — only when the model calls the tool.
 
@@ -28,7 +29,7 @@ Media enters the context **lazily** — only when the model calls the tool.
 
 ## 3. Config file
 
-Location: `~/.pi/agent/extensions/pi-media-plugin/config.json`
+Location: `~/.pi/agent/extensions/pi-extendedread/config.json`
 
 The config is **self-documenting**: a `$docs` key describes every other key and its valid values.
 
@@ -287,9 +288,9 @@ The native mechanism for audio/video requires a patch to pi's provider bundle, c
 
 | ID | File | Change |
 |---|---|---|
-| `convertMessages` | `dist/bundle/chunks/openai-completions-*.js` | Add `audio`/`video` block detection + serialization |
+| `convertMessages` | `dist/bundle/chunks/openai-completions-*.js` | Add `audio`/`video` to `hasImages` detection |
+| `convertMessagesBlocks` | `dist/bundle/chunks/openai-completions-*.js` | Map `audio`/`video` blocks to `input_audio`/`input_video` serialization |
 | `compaction` | `dist/core/compaction/compaction.js` | Add `ESTIMATED_AUDIO_CHARS`, `ESTIMATED_VIDEO_CHARS`; extend size walk |
-| `types` | `dist/core/extensions/types.d.ts` | Add `AudioContent`, `VideoContent` to content-block union |
 
 ### How it's applied
 
@@ -315,8 +316,13 @@ The native mechanism for audio/video requires a patch to pi's provider bundle, c
 pi-extendedread-plugin/
   src/
     index.ts            — plugin entry: registerTool + activate (apply patches, load config)
-    readExtended.ts     — tool implementation (§5 sketch)
+    readExtended.ts     — dispatch spine: modality routing, capability gate, size cap
     config.ts           — loads config.json, exposes model capabilities + knobs
+    ffmpeg.ts           — ffmpeg helpers: convert, crop, dimension probing
+    image.ts            — processImageBytes (wraps pi's Photon pipeline)
+    region.ts           — grid + locate: tile math, crop pipeline, rendering
+    pdf.ts              — PDF: text extraction, page rendering, TOC, search, zoom/grid/locate
+    pptx.ts             — PPTX → PDF via @s8fy/pptx-converter, delegates to pdf.ts
     types.d.ts          — ambient module declarations for pi's dist exports
     patch/
       index.ts          — locate files, apply all targets, register /extended-read-patch

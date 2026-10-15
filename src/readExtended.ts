@@ -1,25 +1,30 @@
 /**
  * readExtended.ts — extendedRead tool implementation.
  *
- * Model-invoked tool that reads media files (images, audio, video, PDF) and
- * returns them as content blocks in the tool result. Mirrors the native `read`
- * tool's flow: resolve → stat → size cap → capability gate → dispatch → return.
+ * Model-invoked tool that reads media files (images, audio, video, PDF, PPTX)
+ * and returns them as content blocks in the tool result. Mirrors the native
+ * `read` tool's flow: resolve → stat → size cap → capability gate → dispatch.
  *
- * Images: in-memory via pi's processImage (Photon WASM + resize worker).
- * Audio/Video: ffmpeg → /tmp → base64. No resize.
- * PDF: mupdf (WASM) → text extraction or page rendering to PNG.
+ * Dispatch delegates to specialized modules:
+ *   - ffmpeg.ts  — format conversion, region cropping, dimension probing
+ *   - image.ts   — pi's Photon resize pipeline
+ *   - region.ts  — grid + locate (region-finding tools)
+ *   - pdf.ts     — mupdf text/image extraction
+ *   - pptx.ts    — PPTX → PDF conversion
  */
 
-import { stat, readFile, unlink, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { resolve, extname, join } from "node:path";
-import { homedir, tmpdir } from "node:os";
+import { stat, readFile, unlink } from "node:fs/promises";
+import { resolve, extname } from "node:path";
+import { homedir } from "node:os";
 
-import { resolvePiRoot } from "./patch/index.js";
-import { randomUUID } from "node:crypto";
-import { execFile } from "node:child_process";
-import ffmpeg from "@ffmpeg-installer/ffmpeg";
 import type { PluginConfig } from "./config.js";
 import { resolveModelConfig } from "./config.js";
+import { ffmpegConvert } from "./ffmpeg.js";
+import { processImageBytes } from "./image.js";
+import { cropRegionToPng, ZOOM_UNAVAILABLE_HINT } from "./ffmpeg.js";
+import { renderGrid, renderLocate } from "./region.js";
+import { readPdf } from "./pdf.js";
+import { readPptx } from "./pptx.js";
 
 // --- Format maps ---
 
@@ -81,26 +86,7 @@ function modalityOf(ext: string): "image" | "audio" | "video" | undefined {
 	return undefined;
 }
 
-function ffmpegConvert(
-	inputPath: string,
-	targetExt: string,
-	timeoutMs: number,
-): Promise<string> {
-	const outputPath = join(tmpdir(), `pi-media-${process.pid}-${randomUUID()}.${targetExt}`);
-	return new Promise((resolveP, rejectP) => {
-		execFile(
-			ffmpeg.path,
-			["-y", "-i", inputPath, outputPath],
-			{ timeout: timeoutMs },
-			(err) => {
-				if (err) rejectP(err);
-				else resolveP(outputPath);
-			},
-		);
-	});
-}
-
-// --- Main ---
+// --- Types ---
 
 export interface ExtendedReadParams {
 	path: string;
@@ -112,6 +98,12 @@ export interface ExtendedReadParams {
 	search?: string;
 	/** PDF: DPI for image mode (overrides config default). Range: 72–600. */
 	dpi?: number;
+	/** Crop + scale a rectangular region on any image — direct formats (png,jpg,gif,webp,bmp), converted formats (heic,tiff,tif,avif,...) and PDF image mode. Normalized [x,y,w,h] fractions 0–1 of the bounding box; omit for full frame. */
+	zoom?: { x: number; y: number; w: number; h: number };
+	/** Tile a region into a regular rows×cols grid of sharp per-cell crops, each with its exact normalized bbox + a ready-to-use zoom hint. */
+	grid?: { rows: number; cols: number; region?: { x: number; y: number; w: number; h: number } };
+	/** Coarse-to-fine tiling with overlap: tile a region into rows×cols sharp tiles, each extended into its neighbor by `overlap` fraction so targets on tile boundaries are fully inside at least one tile. */
+	locate?: { rows?: number; cols?: number; overlap?: number; region?: { x: number; y: number; w: number; h: number } };
 }
 
 export interface ExtendedReadContext {
@@ -124,6 +116,43 @@ export interface AgentToolResult {
 	details?: unknown;
 	isError?: boolean;
 }
+
+// --- Shared image handler ---
+
+/**
+ * Process image bytes with optional zoom crop, returning content blocks.
+ * Shared by direct and convert image handlers.
+ */
+async function processImageContent(
+	bytes: Buffer,
+	mime: string,
+	zoom: { x: number; y: number; w: number; h: number } | undefined,
+	inputPath: string,
+	timeoutMs: number,
+): Promise<{ content: { type: string; text?: string; data?: string; mimeType?: string }[] }> {
+	const zoomHints: string[] = [];
+	let finalBytes = bytes;
+	let finalMime = mime;
+	if (zoom) {
+		const cropped = await cropRegionToPng(inputPath, zoom, timeoutMs);
+		if (cropped) {
+			finalBytes = cropped;
+			finalMime = "image/png";
+		} else {
+			zoomHints.push(ZOOM_UNAVAILABLE_HINT);
+		}
+	}
+	const { data, mimeType } = await processImageBytes(finalBytes, finalMime);
+	return {
+		content: [
+			{ type: "text", text: `Read image [${mimeType}]` },
+			...zoomHints.map((h) => ({ type: "text" as const, text: h })),
+			{ type: "image", data, mimeType },
+		],
+	};
+}
+
+// --- Main dispatch ---
 
 export async function readExtended(
 	params: ExtendedReadParams,
@@ -175,14 +204,12 @@ export async function readExtended(
 			return {
 				content: [{ type: "text", text: "Model does not support images" }],
 			};
-		const bytes = await readFile(path);
-		const { data, mimeType } = await processImageBytes(bytes, IMAGE_DIRECT[ext]);
-		return {
-			content: [
-				{ type: "text", text: `Read image [${mimeType}]` },
-				{ type: "image", data, mimeType },
-			],
-		};
+		if (params.grid)
+			return { content: await renderGrid(path, params.grid, config) };
+		if (params.locate)
+			return { content: await renderLocate(path, params.locate, config) };
+		const bytes: Buffer = await readFile(path);
+		return processImageContent(bytes, IMAGE_DIRECT[ext], params.zoom, path, config.defaults.ffmpegTimeoutMs);
 	}
 
 	// --- Image convertible ---
@@ -193,14 +220,12 @@ export async function readExtended(
 			};
 		const tmp = await ffmpegConvert(path, "png", config.defaults.ffmpegTimeoutMs);
 		try {
-			const bytes = await readFile(tmp);
-			const { data, mimeType } = await processImageBytes(bytes, "image/png");
-			return {
-				content: [
-					{ type: "text", text: `Read image [${mimeType}]` },
-					{ type: "image", data, mimeType },
-				],
-			};
+			if (params.grid)
+				return { content: await renderGrid(tmp, params.grid, config) };
+			if (params.locate)
+				return { content: await renderLocate(tmp, params.locate, config) };
+			const bytes: Buffer = await readFile(tmp);
+			return processImageContent(bytes, "image/png", params.zoom, tmp, config.defaults.ffmpegTimeoutMs);
 		} finally {
 			await unlink(tmp).catch(() => {});
 		}
@@ -290,262 +315,4 @@ export async function readExtended(
 	return {
 		content: [{ type: "text", text: `[extendedRead: unsupported format ${ext}]` }],
 	};
-}
-
-// --- PDF handling (mupdf WASM) ---
-
-async function readPdf(
-	path: string,
-	params: ExtendedReadParams,
-	config: PluginConfig,
-	input: string[],
-): Promise<AgentToolResult> {
-	const mupdf = await import("mupdf") as any;
-	const buffer = await readFile(path);
-	const doc = mupdf.Document.openDocument(buffer, "application/pdf");
-	try {
-		const totalPages = doc.countPages();
-		const maxPages = config.defaults.pdf?.maxPagesPerCall ?? 10;
-		let pageIndices = parsePageSelector(params.pages ?? "1", totalPages);
-		if (pageIndices.length > maxPages) {
-			pageIndices = pageIndices.slice(0, maxPages);
-		}
-		const mode = params.mode ?? "text";
-		const dpi = params.dpi ?? config.defaults.pdf?.defaultDpi ?? 150;
-
-		// --- TOC mode ---
-		if (params.toc) {
-			return readPdfToc(doc);
-		}
-
-		// --- Search mode ---
-		if (params.search) {
-			return readPdfSearch(doc, params.search, pageIndices, totalPages);
-		}
-
-		if (mode === "image" && !input.includes("image")) {
-			return {
-				content: [{ type: "text", text: "Model does not support images (required for PDF image mode)" }],
-			};
-		}
-
-		const blocks: { type: string; text?: string; data?: string; mimeType?: string }[] = [];
-
-		if (mode === "text") {
-			// Text extraction
-			for (const i of pageIndices) {
-				const page = doc.loadPage(i);
-				try {
-					const stext = page.toStructuredText("preserve-whitespace");
-					const text = stext.asText();
-					stext.destroy();
-					if (text.trim().length === 0) {
-						blocks.push({ type: "text", text: `--- Page ${i + 1} ---\n[no text on this page — use mode='image' to view]` });
-					} else {
-						blocks.push({ type: "text", text: `--- Page ${i + 1} ---\n${text}` });
-					}
-				} finally {
-					page.destroy();
-				}
-			}
-			blocks.push({
-				type: "text",
-				text: `PDF: ${totalPages} pages. Read pages ${pageIndices.map((i) => i + 1).join(",")}. Use pages='N-M' for more, mode='image' to view visually, toc=true for outline, search='query' to find text.`,
-			});
-		} else {
-			// Image rendering
-			for (const i of pageIndices) {
-				const page = doc.loadPage(i);
-				try {
-					const pixmap = page.toPixmap(
-						mupdf.Matrix.scale(dpi / 72, dpi / 72),
-						mupdf.ColorSpace.DeviceRGB,
-					);
-					try {
-						const png = Buffer.from(pixmap.asPNG());
-						blocks.push({
-							type: "text",
-							text: `PDF page ${i + 1} of ${totalPages} (${dpi} DPI)`,
-						});
-						blocks.push({
-							type: "image",
-							data: png.toString("base64"),
-							mimeType: "image/png",
-						});
-					} finally {
-						pixmap.destroy();
-					}
-				} finally {
-					page.destroy();
-				}
-			}
-			blocks.push({
-				type: "text",
-				text: `PDF: ${totalPages} pages. Read pages ${pageIndices.map((i) => i + 1).join(",")} at ${dpi} DPI. Use pages='N-M' for more, dpi=N to change resolution.`,
-			});
-		}
-
-		return { content: blocks };
-	} finally {
-		doc.destroy();
-	}
-}
-
-/** Extract and format the PDF outline/TOC. */
-function readPdfToc(doc: any): AgentToolResult {
-	const outline = doc.loadOutline();
-	if (!outline || outline.length === 0) {
-		return {
-			content: [{ type: "text", text: "PDF has no table of contents/outline." }],
-		};
-	}
-	const lines: string[] = ["PDF Outline:"];
-	function walk(items: any[], depth: number) {
-		for (const item of items) {
-			const indent = "\t".repeat(depth);
-			const pageRef = item.page != null ? ` [p.${item.page + 1}]` : "";
-			lines.push(`${indent}- ${item.title ?? "(untitled)"}${pageRef}`);
-			if (item.down && item.down.length > 0) {
-				walk(item.down, depth + 1);
-			}
-		}
-	}
-	walk(outline, 0);
-	lines.push("");
-	lines.push("Use pages='N' to read a specific page, search='query' to find text.");
-	return { content: [{ type: "text", text: lines.join("\n") }] };
-}
-
-/** Search PDF pages for text, return matching pages with context. */
-function readPdfSearch(
-	doc: any,
-	needle: string,
-	pageIndices: number[],
-	totalPages: number,
-): AgentToolResult {
-	const blocks: { type: string; text?: string }[] = [];
-	let totalHits = 0;
-
-	for (const i of pageIndices) {
-		const page = doc.loadPage(i);
-		try {
-			const hits = page.search(needle);
-			if (hits && hits.length > 0) {
-				totalHits += hits.length;
-				// Get surrounding context from structured text
-				const stext = page.toStructuredText("preserve-whitespace");
-				const text = stext.asText();
-				stext.destroy();
-				// Find the needle in text (case-insensitive) for context
-				const lowerText = text.toLowerCase();
-				const lowerNeedle = needle.toLowerCase();
-				const idx = lowerText.indexOf(lowerNeedle);
-				let context: string;
-				if (idx >= 0) {
-					const start = Math.max(0, idx - 60);
-					const end = Math.min(text.length, idx + needle.length + 60);
-					context = (start > 0 ? "…" : "") + text.slice(start, end) + (end < text.length ? "…" : "");
-				} else {
-					context = text.slice(0, 120) + (text.length > 120 ? "…" : "");
-				}
-				blocks.push({
-					type: "text",
-					text: `--- Page ${i + 1} (${hits.length} hit${hits.length === 1 ? "" : "s"}) ---\n${context}`,
-				});
-			}
-		} finally {
-			page.destroy();
-		}
-	}
-
-	if (totalHits === 0) {
-		blocks.push({
-			type: "text",
-			text: `No matches for "${needle}" in pages ${pageIndices.map((i) => i + 1).join(",")}.`,
-		});
-	} else {
-		blocks.push({
-			type: "text",
-			text: `Search "${needle}": ${totalHits} hit${totalHits === 1 ? "" : "s"} across ${pageIndices.length} page${pageIndices.length === 1 ? "" : "s"}. Use pages='N' to read full page content.`,
-		});
-	}
-
-	return { content: blocks };
-}
-
-/** Parse a page selector like "1", "1-5", "3,7,12" into zero-based indices. */
-function parsePageSelector(selector: string, totalPages: number): number[] {
-	const indices: number[] = [];
-	for (const part of selector.split(",")) {
-		const trimmed = part.trim();
-		if (trimmed.includes("-")) {
-			const [start, end] = trimmed.split("-").map((s) => parseInt(s, 10) - 1);
-			for (let i = Math.max(0, start); i < Math.min(totalPages - 1, end); i++) {
-				indices.push(i);
-			}
-		} else {
-			const i = parseInt(trimmed, 10) - 1;
-			if (i >= 0 && i < totalPages) indices.push(i);
-		}
-	}
-	// Deduplicate and sort
-	return [...new Set(indices)].sort((a, b) => a - b);
-}
-
-// --- PPTX handling (convert to PDF via @s8fy/pptx-converter, then use PDF pipeline) ---
-
-async function readPptx(
-	path: string,
-	params: ExtendedReadParams,
-	config: PluginConfig,
-	input: string[],
-): Promise<AgentToolResult> {
-	const { pptxToPdf } = await import("@s8fy/pptx-converter");
-	try {
-		const pptxBuffer = await readFile(path);
-		const result = await pptxToPdf(pptxBuffer);
-		// Write PDF to temp file for readPdf
-		const tmpDir = await mkdtemp(join(tmpdir(), "pi-pptx-"));
-		const pdfPath = join(tmpDir, "converted.pdf");
-		await writeFile(pdfPath, result.data);
-		try {
-			return await readPdf(pdfPath, params, config, input);
-		} finally {
-			await rm(tmpDir, { recursive: true }).catch(() => {});
-		}
-	} catch (e: any) {
-		return {
-			content: [
-				{
-					type: "text",
-					text: `[extendedRead: PPTX conversion failed: ${e.message}]`,
-				},
-			],
-		};
-	}
-}
-
-// --- Image processing (in-memory, no /tmp) ---
-// Reuses pi's processImage pipeline (Photon WASM + resize worker).
-// Imported lazily to avoid hard dependency at module load.
-
-async function processImageBytes(
-	bytes: Buffer,
-	mimeType: string,
-): Promise<{ data: string; mimeType: string; hints?: string[] }> {
-	// pi's processImage: normalize (Photon) → resize (worker) → base64
-	// Returns { ok: true, data, mimeType, hints } or { ok: false, message }.
-	// Use absolute path from pi's install root (not a package name —
-	// the plugin's node_modules doesn't have pi as a dependency).
-	const piRoot = resolvePiRoot();
-	const { processImage } = await import(
-		join(piRoot, "dist/utils/image-process.js")
-	) as any;
-	const result = await processImage(bytes, mimeType, {
-		autoResizeImages: true,
-	});
-	if (!result.ok) {
-		throw new Error(result.message ?? "Image processing failed");
-	}
-	return { data: result.data, mimeType: result.mimeType, hints: result.hints };
 }

@@ -45,7 +45,7 @@ export default function activate(pi: ExtensionAPI) {
 			"Images: png, jpg, jpeg, gif, webp, bmp, heic, heif, tiff, tif, tga, avif. " +
 			"Audio: wav, mp3, flac, ogg, aiff, aif, m4a, aac, wma, opus. " +
 			"Video: mp4, webm, mkv, mov, avi. " +
-			"PDF: text extraction (default) or page rendering to image. Use pages='1-5' for pagination, toc=true for outline, search='query' to find text, dpi=N for resolution. " +
+			"PDF: text extraction (default) or page rendering to image. Use pages='1-5' for pagination, toc=true for outline, search='query' to find text, dpi=N for resolution, zoom='{x,y,w,h}' to crop+scale a rectangular region on any image — direct or converted formats and PDF image mode. grid={rows,cols[,region]} tiles a region into a regular grid of sharp per-cell crops, each with its exact zoom={...} hint — use it to pinpoint a cell/subject in a large image whose full-page view is too downscaled to read. locate={rows,cols[,region,overlap]} does coarse-to-fine tiling with overlap: the tool tiles a region into overlapping tiles, the model picks the tile containing the target, then drills in with zoom. " +
 			"PPTX: converts to PDF via @s8fy/pptx-converter, then uses the PDF pipeline. " +
 			"For text files, use the native read tool.",
 		promptSnippet: "Read media files",
@@ -60,6 +60,18 @@ export default function activate(pi: ExtensionAPI) {
 			toc: Type.Optional(Type.Boolean({ description: "PDF: return table of contents/outline" })),
 			search: Type.Optional(Type.String({ description: "PDF: search for text (case-insensitive), returns matching pages with context" })),
 			dpi: Type.Optional(Type.Number({ description: "PDF: DPI for image mode (72-600, default from config)" })),
+			zoom: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number(), w: Type.Number(), h: Type.Number() }, { description: "Crop + scale a rectangular region on any image — direct formats (png,jpg,gif,webp,bmp), converted formats (heic,tiff,tif,avif,...) and PDF image mode. Normalized [x,y,w,h] fractions 0–1 of the bounding box; omit for full frame." })),
+			grid: Type.Optional(Type.Object({
+				rows: Type.Number({ description: "Number of rows (>= 1)" }),
+				cols: Type.Number({ description: "Number of columns (>= 1)" }),
+				region: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number(), w: Type.Number(), h: Type.Number() }, { description: "Normalized [x,y,w,h] region to tile (default: full frame)" })),
+			}, { description: "Tile a region of an image into a regular rows×cols grid of sharp per-cell crops, each returned with its exact normalized bbox + a ready-to-use zoom={...} hint. Works on direct formats (png,jpg,gif,webp,bmp), converted formats (heic,tiff,tif,avif,...) and PDF image mode. Use when you need a specific cell/region in a large image and the full-page view is too downscaled to identify it. Cap: 49 cells (7×7)." })),
+			locate: Type.Optional(Type.Object({
+				rows: Type.Optional(Type.Number({ description: "Number of tile rows (default 4)" })),
+				cols: Type.Optional(Type.Number({ description: "Number of tile columns (default 4)" })),
+				overlap: Type.Optional(Type.Number({ description: "Overlap fraction between adjacent tiles (default 0.15, range 0–0.5)" })),
+				region: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number(), w: Type.Number(), h: Type.Number() }, { description: "Normalized [x,y,w,h] region to tile (default: full frame)" })),
+			}, { description: "Coarse-to-fine tiling with overlap: tile a region into rows×cols sharp tiles, each extended into its neighbor by `overlap` fraction so targets on tile boundaries are fully inside at least one tile. Works on direct formats (png,jpg,gif,webp,bmp), converted formats (heic,tiff,tif,avif,...) and PDF image mode. Use when you need to find a specific object/region in a large image and the full-page view is too downscaled to identify it. The model picks the tile containing the target, then uses its zoom={...} hint to crop sharp. Cap: 49 tiles (7×7)." })),
 		}),
 		executionMode: executionMode(config),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {

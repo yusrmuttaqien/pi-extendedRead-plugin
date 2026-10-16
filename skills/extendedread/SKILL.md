@@ -1,6 +1,6 @@
 ---
 name: extendedread
-description: Use the extendedRead tool for media files beyond native read: heic/heif/tiff/tga/avif images, audio (wav/mp3/flac/m4a/opus), video (mp4/webm/mkv/mov/avi), PDF, PPTX. Covers region drill-down on large images (zoom, grid, locate tiling) and PDF pagination, TOC, search, and visual page rendering.
+description: 'Use the extendedRead tool for media files beyond native read: heic/heif/tiff/tga/avif images, audio (wav/mp3/flac/m4a/opus), video (mp4/webm/mkv/mov/avi), PDF, PPTX. Covers region drill-down on large images (zoom, grid, locate tiling) and PDF pagination, TOC, search, and visual page rendering.'
 ---
 
 # extendedRead

@@ -34,6 +34,8 @@ Dependency DAG: `ffmpeg → image → region → pdf → pptx → readExtended`.
 | Model-facing text only (guidance) | the `promptGuidelines` bullets in `src/index.ts` (≤6); tool description + param descriptions carry mechanics. Do not add a skill — see steering rules below. |
 | Model-facing result notes (steering text in tool output) | owning module — notes live in dispatch code (`readExtended.ts`, `pdf.ts`), not in `index.ts`. These strings are the model's only window into config (capability gate, size cap, pagination) and the discovery path for escape hatches: when a new option lands (e.g. `frames=N`), update the dead-end notes to steer to it. Tests pin note wording. |
 
+**Catch-all:** if a change matches no row, derive the row: list every surface that describes the changed behavior — model-facing (tool description, param descriptions, `promptGuidelines`, result notes) and user/repo-facing (README, SPEC, config `$docs`) — plus the code and tests that implement it. Any observable behavior change touches at least one surface in each column; if you can't name one, ask "who else needs to know about this change?" and add a row for the change type so the next session doesn't derive it again.
+
 ## Canonical facts that must agree everywhere
 
 - Size caps, dpi, maxPagesPerCall, ffmpegTimeoutMs: identical numbers in `src/config.ts` defaults, repo `config.json` values **and** its `$docs` text, SPEC §3 block, README Configuration section.
@@ -47,6 +49,9 @@ Dependency DAG: `ffmpeg → image → region → pdf → pptx → readExtended`.
 ```bash
 npx tsc && npm test          # rebuild dist/ (pi loads from dist/, no restart needed); tests must pass
 # cross-check the matrix rows you touched; docs-only commits need this too
+# sync every model-facing surface (tool description, param descriptions,
+#   promptGuidelines, result notes) and user/repo-facing doc (README, SPEC,
+#   config $docs) that describes the changed behavior — before committing
 git add -A && git commit -m "feat|fix|docs|chore: ..."   # conventional commits, push origin main
 npm install                  # when deps change → package-lock.json lands in same/next commit
 ```

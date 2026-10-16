@@ -52,7 +52,10 @@ export default function activate(pi: ExtensionAPI) {
 		promptSnippet: "Read media files",
 		promptGuidelines: [
 			"Use extendedRead to read media files (images, audio, video, PDF) the user references.",
-			"For a first look at large video/audio, use info=true (metadata: size, duration, dimensions, audio streams) instead of writing an ad-hoc ffprobe script; drop info=true to load the file itself.",
+			"Do not write ad-hoc scripts for actions the tool already provides: probe with info=true instead of parsing ffprobe/ffmpeg output, zoom/grid/locate for image regions, pages/toc/search for PDF navigation.",
+			"For large images, drill down with zoom/grid/locate before answering from a downscaled full-frame view; every grid/locate result carries its next zoom hint.",
+			"Never read a long PDF all at once: toc=true when structure is unknown, search='query' to locate mentions, pages='5-10' for targeted pages, mode='image' (+dpi) for charts and scans.",
+			"Probe large video/audio with info=true first; drop info=true to load the file itself. Files over maxBytes return a size note — do not retry blindly.",
 			"Use the native read tool for text files.",
 		],
 		parameters: Type.Object({

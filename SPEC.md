@@ -345,8 +345,6 @@ pi-extendedread-plugin/
     patch/
       index.ts          — locate files, apply all targets, register /extended-read-patch
       targets.ts        — PatchTarget definitions (anchor, replace, sentinel)
-  skills/
-    extendedread/SKILL.md — usage skill advertised to the model at startup; loaded on matching tasks
   config.json           — user-editable (self-documenting, §3)
   PATCHES.md            — maintenance doc: table of targets, anchors, sentinels
   test/

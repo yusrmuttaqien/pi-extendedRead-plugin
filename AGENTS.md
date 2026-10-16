@@ -50,8 +50,10 @@ Dependency DAG: `ffmpeg → image → region → pdf → pptx → readExtended`.
 npx tsc && npm test          # rebuild dist/ (pi loads from dist/, no restart needed); tests must pass
 # cross-check the matrix rows you touched; docs-only commits need this too
 # sync every model-facing surface (tool description, param descriptions,
-#   promptGuidelines, result notes) and user/repo-facing doc (README, SPEC,
-#   config $docs) that describes the changed behavior — before committing
+#   promptGuidelines, result notes) AND user/repo-facing doc (README, SPEC,
+#   config $docs) that describes the changed behavior — both must match the
+#   current implementation (the code is ground truth, not the docs) — before
+#   committing
 git add -A && git commit -m "feat|fix|docs|chore: ..."   # conventional commits, push origin main
 npm install                  # when deps change → package-lock.json lands in same/next commit
 ```

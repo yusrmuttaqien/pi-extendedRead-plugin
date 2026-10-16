@@ -23,14 +23,16 @@ Dependency DAG: `ffmpeg → image → region → pdf → pptx → readExtended`.
 
 | Change | Must update |
 | --- | --- |
-| Tool param (add/rename/semantics) | `src/index.ts` schema **and** the param's description text; README per-modality tables (`Image reading`, `Video reading`, `PDF reading`) + Metadata probe section when relevant; SPEC §4 tool-definition table, §5 dispatch steps; tests. If semantics change in code: `src/readExtended.ts`/owning module. |
+| Tool param added/renamed | `src/index.ts` schema + the param's description text; README per-modality tables (`Image reading`, `Video reading`, `PDF reading`) + Metadata probe section when relevant; SPEC §4 tool-definition table; tests. |
+| Tool param semantics changed | owning module (`readExtended.ts` or the format handler); SPEC §5 dispatch steps; README row for that param; routing tests. |
 | Dispatch/routing behavior | owning module (usually `readExtended.ts`); SPEC §5 numbered steps verbatim; README rows describing the new behavior; routing tests. |
 | New capability/format/modality | format maps in `readExtended.ts`; SPEC §1 goal bullets, §6 format matrix + pipeline subsection, §9 structure if a file is added; README intro capability list + modality table row(s); tests. Move the item out of SPEC §14 (Future work) when implemented. |
 | Config knob | `src/config.ts` types+defaults, repo `config.json` **values and `$docs` entries** (self-documenting), SPEC §3 defaults block, README Configuration section; default/parse tests. |
 | ffmpeg pipeline (probe/crop/convert) | `src/ffmpeg.ts`; SPEC §6 relevant subsection (+§7 wire format only if serialization changes); live smoke below. |
-| grid/locate math or rendering | `src/region.ts` constants + compute functions; model-facing param descriptions in `src/index.ts` and `PdfParams` (state the 49-cell cap, overlap default); README rows for grid/locate (Image + PDF tables); SPEC §247 region-finding bullets; tile-math tests. |
+| grid/locate math or rendering | `src/region.ts` constants + compute functions; model-facing param descriptions in `src/index.ts` and `PdfParams` (state the 49-cell cap, overlap default); README rows for grid/locate (Image + PDF tables); SPEC §6 region-finding bullets; tile-math tests. |
 | Pi patch target | `src/patch/targets.ts`; PATCHES.md table; SPEC §8 targets table; sentinel version bump on anchor change; `test/patch.test.ts`. |
-| Model-facing text only (guidance) | six `promptGuidelines` bullets in `src/index.ts`; tool description + param descriptions carry mechanics. Do not add a skill — see steering rules below. |
+| Model-facing text only (guidance) | the `promptGuidelines` bullets in `src/index.ts` (≤6); tool description + param descriptions carry mechanics. Do not add a skill — see steering rules below. |
+| Model-facing result notes (steering text in tool output) | owning module — notes live in dispatch code (`readExtended.ts`, `pdf.ts`), not in `index.ts`. These strings are the model's only window into config (capability gate, size cap, pagination) and the discovery path for escape hatches: when a new option lands (e.g. `frames=N`), update the dead-end notes to steer to it. Tests pin note wording. |
 
 ## Canonical facts that must agree everywhere
 
@@ -61,7 +63,7 @@ Tests accompany math, parsers and routing changes (node:test fixtures; see `pars
 
 ## Model-facing steering rules
 
-Guidance must be unconditional: six short `promptGuidelines` bullets in `src/index.ts`, merged into the system prompt's Guidelines section whenever the tool is active. Mechanics stay in the tool/param descriptions (travel with every request as part of the schema). No shipped skill, no `"skills"` entry in package.json — do not reintroduce one; skills depend on the model choosing to load them. Keep bullets ≤6 and never restate a param's mechanics twice.
+Guidance must be unconditional: short `promptGuidelines` bullets (≤6) in `src/index.ts`, merged into the system prompt's Guidelines section whenever the tool is active. Mechanics stay in the tool/param descriptions (travel with every request as part of the schema). No shipped skill, no `"skills"` entry in package.json — do not reintroduce one; skills depend on the model choosing to load them. Keep bullets ≤6 and never restate a param's mechanics twice.
 
 ## Design constraints
 

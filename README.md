@@ -20,7 +20,7 @@ The model calls `extendedRead` with a file path. The tool:
 4. Dispatches by extension:
    - **Images:** in-memory via pi's Photon/resize pipeline (no temp file).
    - **Audio/Video:** ffmpeg → `/tmp` → base64 (converted to png/mp3/mp4 if needed).
-   - **PDF:** mupdf (WASM) → text extraction or page rendering to PNG.
+   - **PDF:** mupdf (WASM) → text extraction, or page rendering to PNG → pi's Photon/resize pipeline.
    - **PPTX:** @s8fy/pptx-converter → PDF → mupdf pipeline (in-process WASM, no system dependency).
 5. Returns content blocks (`image`/`audio`/`video`/`text`) in the tool result.
 
@@ -81,7 +81,7 @@ Text extraction, visual rendering, table of contents, and text search via mupdf 
 | `extendedRead path="doc.pdf" search="quarterly revenue"` | Pages matching query |
 
 - **Text mode** (default): extracts text via mupdf's `toStructuredText`. Lightweight, works with any model.
-- **Image mode**: renders pages to PNG at configurable DPI (`dpi` param, default 150). For visual escalation (charts, diagrams, scanned docs).
+- **Image mode**: renders pages to PNG at configurable DPI (`dpi` param, default 150), then runs each PNG through pi's Photon/resize pipeline so every image this tool returns is bounded (raw-PNG fallback on pipeline failure). For visual escalation (charts, diagrams, scanned docs).
 - **TOC**: `toc=true` extracts the PDF outline/TOC via `doc.loadOutline()`. Returns hierarchical list with titles and page refs.
 - **Search**: `search='query'` performs case-insensitive text search via `page.search()`. Returns matching pages with 60-char context windows.
 - **Pagination**: the `pages` parameter accepts `"1"`, `"1-5"`, `"3,7,12"`. Default is page 1. The response includes total page count so the model can navigate.

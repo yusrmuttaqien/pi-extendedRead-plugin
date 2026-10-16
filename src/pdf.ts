@@ -12,6 +12,21 @@ import { randomUUID } from "node:crypto";
 import type { PluginConfig } from "./config.js";
 import { cropRegionToPng, ZOOM_UNAVAILABLE_HINT } from "./ffmpeg.js";
 import { renderGrid, renderLocate } from "./region.js";
+import { processImageBytes } from "./image.js";
+
+/**
+ * Run rendered PNG bytes through pi's Photon pipeline (resize/normalize) so
+ * every image this tool returns is bounded. Falls back to raw bytes on
+ * failure — a rendered page is never lost to a pipeline hiccup.
+ */
+async function boundedPng(png: Buffer): Promise<{ data: string; mimeType: string }> {
+	try {
+		return await processImageBytes(png, "image/png");
+	} catch (e) {
+		console.warn("[extendedRead] PDF image processing failed, using raw PNG:", e);
+		return { data: png.toString("base64"), mimeType: "image/png" };
+	}
+}
 
 /**
  * Read a PDF: text extraction, image rendering, TOC, search.
@@ -125,18 +140,22 @@ export async function readPdf(
 								const cropped = await cropRegionToPng(tmpInput, params.zoom, config.defaults.ffmpegTimeoutMs);
 								await unlink(tmpInput).catch(() => {});
 								if (cropped) {
-									blocks.push({ type: "image", data: cropped.toString("base64"), mimeType: "image/png" });
+									const { data, mimeType } = await boundedPng(cropped);
+									blocks.push({ type: "image", data, mimeType });
 								} else {
 									blocks.push({ type: "text", text: ZOOM_UNAVAILABLE_HINT });
-									blocks.push({ type: "image", data: png.toString("base64"), mimeType: "image/png" });
+									const { data, mimeType } = await boundedPng(png);
+									blocks.push({ type: "image", data, mimeType });
 								}
 							} catch (e) {
 								console.warn("[extendedRead] PDF crop failed, using full page:", e);
 								blocks.push({ type: "text", text: ZOOM_UNAVAILABLE_HINT });
-								blocks.push({ type: "image", data: png.toString("base64"), mimeType: "image/png" });
+								const { data, mimeType } = await boundedPng(png);
+								blocks.push({ type: "image", data, mimeType });
 							}
 						} else {
-							blocks.push({ type: "image", data: png.toString("base64"), mimeType: "image/png" });
+							const { data, mimeType } = await boundedPng(png);
+							blocks.push({ type: "image", data, mimeType });
 						}
 					} finally {
 						pixmap.destroy();

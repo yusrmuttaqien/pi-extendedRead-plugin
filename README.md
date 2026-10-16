@@ -39,6 +39,7 @@ Direct formats (png, jpg, jpeg, gif, webp, bmp) are read in-memory. Converted fo
 | `extendedRead path="photo.png" grid='{rows:3,cols:4,region:{x:0,y:0.2,w:1,h:0.6}}'` | Grid over a sub-region |
 | `extendedRead path="photo.png" locate='{rows:4,cols:4}'` | 4×4 tiling with 15% overlap |
 | `extendedRead path="photo.png" locate='{rows:4,cols:4,overlap:0.2}'` | 4×4 tiling with 20% overlap |
+| `extendedRead path="photo.png" info=true` | Metadata text (size, format, dimensions) — no image loaded |
 
 **Region-finding tools** (work on any image format, direct, converted, and PDF image mode):
 
@@ -57,6 +58,9 @@ Direct format (mp4) is read as-is. Converted formats (webm, mkv, mov, avi) are t
 | `extendedRead path="video.mp4"` | Full video (direct format) |
 | `extendedRead path="video.webm"` | Converted to MP4 via ffmpeg |
 | `extendedRead path="video.mkv"` | Converted to MP4 via ffmpeg |
+| `extendedRead path="video.mp4" info=true` | Metadata text (size, duration, dimensions, audio streams) — no video loaded |
+
+**First look on large media:** `info=true` returns size, format, duration, video codec/dimensions and audio presence as plain text. Use it to decide how to load a big file; drop `info=true` for the file itself.
 
 ## PDF reading
 
@@ -81,6 +85,17 @@ Text extraction, visual rendering, table of contents, and text search via mupdf 
 - **TOC**: `toc=true` extracts the PDF outline/TOC via `doc.loadOutline()`. Returns hierarchical list with titles and page refs.
 - **Search**: `search='query'` performs case-insensitive text search via `page.search()`. Returns matching pages with 60-char context windows.
 - **Pagination**: the `pages` parameter accepts `"1"`, `"1-5"`, `"3,7,12"`. Default is page 1. The response includes total page count so the model can navigate.
+
+## Metadata probe (`info=true`)
+
+Works on image/audio/video (ffmpeg-decodable). Runs `ffmpeg -i` and parses the stream dump — no media loaded, no ad-hoc ffprobe script needed:
+
+| Call | Result |
+|---|---|
+| `extendedRead path="video.mp4" info=true` | size, format, duration, video codec + WxH, audio streams |
+| `extendedRead path="photo.heic" info=true` | size, format, dimensions |
+
+Runs before the size cap and capability gate: a file over `maxBytes`, or on a text-only model, can still be inspected. PDF/PPTX get a guidance note (use `toc=true`/`pages`; pass PPTX directly).
 
 ## Install
 

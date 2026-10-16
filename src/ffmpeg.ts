@@ -43,15 +43,103 @@ export function ffmpegConvert(
 }
 
 /** Promisified execFile returning both stdout and stderr. */
-export function runCmd(binary: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+export function runCmd(
+	binary: string,
+	args: string[],
+	timeoutMs = 10_000,
+): Promise<{ stdout: string; stderr: string }> {
 	return new Promise((resolveP, rejectP) => {
-		execFile(binary, args, { timeout: 10_000 }, (err, stdout, stderr) => {
+		execFile(binary, args, { timeout: timeoutMs }, (err, stdout, stderr) => {
 			if (err)
 				rejectP(err);
 			else
 				resolveP({ stdout, stderr });
 		});
 	});
+}
+
+export interface ProbeInfo {
+	/** Demuxer/format name from the "Input #0, ..." line (e.g. "mov"). */
+	format?: string;
+	/** Human duration as ffmpeg prints it, e.g. "00:01:30.00". */
+	duration?: string;
+	bitrate?: string;
+	width?: number;
+	height?: number;
+	videoDetail?: string;
+	audioDetail?: string;
+	/** true when an Audio stream is present in the probe output. */
+	hasAudio: boolean;
+}
+
+/**
+ * Parse ffmpeg's "ffmpeg -i file" stderr dump into structured metadata:
+ * format, duration, video dimensions/codec, audio codec/sample rate.
+ * Pure function; returns null when no stream info is present (non-decodable input).
+ */
+export function parseFfmpegProbe(stderr: string): ProbeInfo | null {
+	const s = String(stderr);
+	const out: ProbeInfo = { hasAudio: false };
+	const fmt = s.match(/Input #\d+, ([^,]+)/);
+	if (fmt) out.format = fmt[1].trim();
+	const dur = s.match(/Duration:\s*([0-9:.]+)/);
+	if (dur) out.duration = dur[1];
+	const br = s.match(/bitrate:\s*(\d+ kb\/s)/);
+	if (br) out.bitrate = br[1];
+	// Video stream line: codec detail + WxH inside the descriptor.
+	const vm = s.match(/Stream #\d+:\d+[^\n]*Video:\s*([^\n]+)/);
+	if (vm) {
+		out.videoDetail = vm[1].trim();
+		// Word-anchored WxH scan: ffmpeg prints codec fourcc pointers like
+		// "(avc1 / 0x31637661)", whose digit runs match a bare \d+x\d+ with
+		// width 0 and a bogus height. Skip them; take the first valid pair.
+		for (const d of vm[1].matchAll(/\b(\d{1,4})x(\d{1,4})\b/g)) {
+			if (+d[1] > 0 && +d[2] > 0) {
+				out.width = +d[1];
+				out.height = +d[2];
+				break;
+		}
+	}
+}
+	const am = s.match(/Stream #\d+:\d+[^\n]*Audio:\s*([^\n]+)/);
+	if (am) {
+		out.hasAudio = true;
+		out.audioDetail = am[1].trim();
+	}
+	if (!out.format && !out.duration && !out.videoDetail && !out.audioDetail)
+		return null;
+	return out;
+}
+
+/**
+ * Probe a media file's metadata (duration, dimensions, streams) without
+ * loading any media. ffmpeg prints the stream dump to stderr on "-i".
+ * Returns null when ffmpeg cannot decode the input.
+ */
+export async function probeMedia(inputPath: string, timeoutMs = 10_000): Promise<ProbeInfo | null> {
+	try {
+		const { stderr } = await runCmd(ffmpegPath, ["-hide_banner", "-i", inputPath, "-f", "null", "-"], timeoutMs);
+		return parseFfmpegProbe(stderr);
+	} catch {
+		/* fall through to null */
+	}
+	return null;
+}
+
+/** Render a ProbeInfo (or null) as model-visible text lines. Pure. */
+export function renderProbeText(info: ProbeInfo | null, size: number, ext: string): string[] {
+	const head = `Probe [${ext}] ${size} bytes`;
+	if (!info)
+		return [`Probe [${ext}] ${size} bytes`, "probe unavailable — ffmpeg cannot decode this input"];
+	const lines = [head];
+	if (info.format) lines.push(`format: ${info.format}`);
+	if (info.duration) lines.push(`duration: ${info.duration}${info.bitrate ? `, bitrate: ${info.bitrate}` : ""}`);
+	if (info.videoDetail) {
+		const dims = info.width && info.height ? ` (${info.width}x${info.height})` : "";
+		lines.push(`Video:${dims} ${info.videoDetail}`);
+	}
+	lines.push(info.hasAudio ? `Audio: present — ${info.audioDetail}` : "audio: none");
+	return lines;
 }
 
 /**

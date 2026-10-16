@@ -111,6 +111,7 @@ defineTool({
     zoom: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number(), w: Type.Number(), h: Type.Number() }, { description: "Crop + scale a rectangular region on any image — direct formats (png,jpg,gif,webp,bmp), converted formats (heic,tiff,tif,avif,...) and PDF image mode. Normalized [x,y,w,h] fractions 0–1 of the bounding box; omit for full frame." })),
     grid: Type.Optional(Type.Object({ rows: Type.Number(), cols: Type.Number(), region: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number(), w: Type.Number(), h: Type.Number() })) }, { description: "Tile a region into a regular grid of sharp per-cell crops, each with its exact zoom={...} hint. Works on direct formats, converted formats, and PDF image mode. Use to pinpoint a cell/subject in a large image whose full-page view is too downscaled to read." })),
     locate: Type.Optional(Type.Object({ rows: Type.Number(), cols: Type.Number(), region: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number(), w: Type.Number(), h: Type.Number() })), overlap: Type.Optional(Type.Number()) }, { description: "Coarse-to-fine tiling with overlap: tiles a region into overlapping tiles, the model picks the tile containing the target, then drills in with zoom. Works on direct formats, converted formats, and PDF image mode. Defaults: 4×4, 15% overlap, full frame." })),
+    info: Type.Optional(Type.Boolean({ description: "Metadata-only first look on ffmpeg-decodable media (image/audio/video): size, duration, dimensions, video codec, audio streams. No media loaded; use before deciding how to load a large file. No ad-hoc ffprobe script needed." })),
   }),
   executionMode: config.defaults.executionMode,
   async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -131,6 +132,15 @@ async function readExtended(params, ctx): Promise<AgentToolResult> {
   try { stat = await fs.stat(path); }
   catch { return err(`File not found: ${path}`); }
   if (!stat.isFile()) return err(`Not a file: ${path}`);
+
+  // 2b. Info probe: metadata-only first look for ffmpeg-decodable media.
+  // Runs before the size cap and capability gate so a large file can be
+  // inspected before deciding how to load it; result is plain text.
+  if (params.info) {
+    const m = modalityOf(ext);
+    return m ? ok(renderProbeText(await probeMedia(path), stat.size, ext))
+             : note(`info works on image/audio/video; for PDF use toc=true/pages`);
+  }
 
   // 3. Size cap (per-modality)
   const modality = modalityOf(ext); // "image" | "audio" | "video" | undefined
@@ -261,6 +271,14 @@ locate(path, region?: {x,y,w,h}, rows?, cols?, overlap?) → [{ row, col, bbox: 
 Both reuse `cropRegionToPng`; `region` defaults to the full frame.
 
 **Guidance.** Tool `description`/`promptGuidelines` name the trigger ("overview too downscaled to identify a specific region/subject") and the workflow shape (tile coarse → pick → sub-tile if needed → zoom). The heavy lifting is in the self-guiding results, not the description.
+
+### Metadata probe (`info=true`)
+
+- **Zero deps:** `ffmpeg -hide_banner -i file` prints the stream dump to stderr; parse it for format, duration, bitrate, video codec/dimensions, audio codec/sample rate. No ffprobe binary needed.
+- **Word-anchored WxH scan** skips ffmpeg's hex fourcc pointers (`0x31637661`) that false-match a bare digit-x-digit pattern with width 0.
+- **Runs before size cap and capability gate:** the probe loads no media, so a file over `maxBytes` or on a text-only model can still be inspected; result is plain text any model can read. Drop `info=true` to load the file itself.
+- **PDF/PPTX** get a guidance note (use `toc=true`/`pages`; pass PPTX directly) — ffmpeg cannot decode them.
+- The param description tells the model this replaces ad-hoc ffprobe scripts for first looks on large media.
 
 ## 7. Wire format & serialization
 

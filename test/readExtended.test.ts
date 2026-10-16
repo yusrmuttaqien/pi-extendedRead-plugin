@@ -767,3 +767,118 @@ test("PDF image mode with an overflowing zoom emits the fallback signal and retu
 
 	await rm(dir, { recursive: true });
 });
+
+// --- Probe (info=true) tests ---
+
+import { parseFfmpegProbe, renderProbeText } from "../src/ffmpeg.js";
+
+const PROBE_FIXTURE = `Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'sample.mp4':
+  Metadata:
+    major_brand     : isom
+    encoder         : Lavf61
+  Duration: 00:01:30.00, start: 0.000000, bitrate: 123 kb/s
+  Stream #0:0(eng): Video: h264 (High) (avc1 / 0x31637661), yuv420p(progressive), 1920x1080 [SAR 1:1 DAR 16:9], 25 fps, 25 tbr, 12800 tbn
+    Stream #0:1(eng): Audio: aac (LC) (mp4a / 0x6134706D), 48000 Hz, stereo, fltp, 128 kb/s (default)`;
+
+test("parseFfmpegProbe extracts format, duration, dims, audio", () => {
+	const info = parseFfmpegProbe(PROBE_FIXTURE);
+	assert.ok(info);
+	assert.equal(info!.format, "mov");
+	assert.equal(info!.duration, "00:01:30.00");
+	assert.equal(info!.bitrate, "123 kb/s");
+	assert.equal(info!.width, 1920);
+	assert.equal(info!.height, 1080);
+	assert.ok(info!.videoDetail!.includes("h264"));
+	assert.ok(info!.hasAudio);
+	assert.match(info!.audioDetail!, /aac/);
+});
+
+test("parseFfmpegProbe video-only has no audio", () => {
+	const info = parseFfmpegProbe(`Input #0, gif, from 'a.gif':\n  Duration: N/A, bitrate: N/A\n  Stream #0:0: Video: gif, bgra, 320x240, 1.00 fps`);
+	assert.ok(info);
+	assert.equal(info!.width, 320);
+	assert.equal(info!.height, 240);
+	assert.equal(info!.hasAudio, false);
+});
+
+test("parseFfmpegProbe returns null on undecodable input", () => {
+	assert.equal(parseFfmpegProbe("Invalid data found when processing input"), null);
+});
+
+test("renderProbeText marks unavailable probe", () => {
+	const lines = renderProbeText(null, 12345, "mp4");
+	assert.match(lines.join("\n"), /probe unavailable/);
+});
+
+/** Generate a tiny mp4 with video + audio via ffmpeg lavfi (self-contained fixture). */
+function genMp4(file: string): Promise<void> {
+	return import("@ffmpeg-installer/ffmpeg").then(({ path: bin }) => {
+		return new Promise((res, rej) => {
+			execFile(
+				bin,
+				["-y", "-f", "lavfi", "-i", "testsrc=size=64x48:duration=1", "-f", "lavfi", "-i", "anullsrc=r=8000:cl=mono", "-shortest", file],
+				{ timeout: 20_000 },
+				(err) => (err ? rej(err) : res()),
+			);
+		});
+	});
+}
+
+test("info=true probes a real mp4 without loading media", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "extread-"));
+	const file = join(dir, "probe.mp4");
+	await genMp4(file);
+
+	const result = await readExtended(
+		{ path: file, info: true },
+		{ cwd: dir, modelId: "test" },
+		config,
+	);
+	const t = text(result.content as any);
+	assert.match(t, /Probe \[mp4\]/);
+	assert.match(t, /duration:/);
+	assert.match(t, /\(64x48\)/);
+	assert.match(t, /Audio: present/);
+
+	await rm(dir, { recursive: true });
+});
+
+test("info=true bypasses size cap and capability gate", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "extread-"));
+	const file = join(dir, "probe.mp4");
+	await genMp4(file);
+
+	// Tiny video cap + text-only model: full load would be blocked; probe must succeed.
+	const tight: PluginConfig = {
+		models: {
+			"text-model": { input: ["text"], maxBytes: { image: 10, audio: 10, video: 500 } },
+		},
+		defaults: {
+			input: ["text", "image", "audio", "video"],
+			maxBytes: { image: 10485760, audio: 20971520, video: 52428800 },
+			executionMode: "parallel",
+			ffmpegTimeoutMs: 30000,
+		},
+	};
+
+	const full = await readExtended({ path: file }, { cwd: dir, modelId: "text-model" }, tight);
+	assert.match(text(full.content as any), /too large|does not support/);
+
+	const probe = await readExtended({ path: file, info: true }, { cwd: dir, modelId: "text-model" }, tight);
+	const t = text(probe.content as any);
+	assert.match(t, /\(64x48\)/);
+	assert.ok(!/too large|does not support/.test(t));
+
+	await rm(dir, { recursive: true });
+});
+
+test("info=true on PDF points to toc/pages", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "extread-"));
+	const file = join(dir, "doc.pdf");
+	await writeFile(file, "%PDF-1.4\n");
+
+	const result = await readExtended({ path: file, info: true }, { cwd: dir, modelId: "test" }, config);
+	assert.match(text(result.content as any), /toc=true\/pages/);
+
+	await rm(dir, { recursive: true });
+});

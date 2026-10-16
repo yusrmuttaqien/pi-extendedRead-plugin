@@ -1,6 +1,6 @@
 ---
 name: extendedread
-description: 'Use the extendedRead tool for media files beyond native read: heic/heif/tiff/tga/avif images, audio (wav/mp3/flac/m4a/opus), video (mp4/webm/mkv/mov/avi), PDF, PPTX. Covers region drill-down on large images (zoom, grid, locate tiling) and PDF pagination, TOC, search, and visual page rendering.'
+description: 'Use the extendedRead tool for media files beyond native read: heic/heif/tiff/tga/avif images, audio (wav/mp3/flac/m4a/opus), video (mp4/webm/mkv/mov/avi), PDF, PPTX. Covers region drill-down on large images (zoom, grid, locate tiling), metadata probe (info=true) for first looks on big media, and PDF pagination, TOC, search, and visual page rendering.'
 ---
 
 # extendedRead
@@ -19,6 +19,7 @@ Workflow: overview → grid/locate to find a region → zoom for the final sharp
 
 ## Audio and video
 
+- **Probe first on big files:** `extendedRead path='x.mp4' info=true` returns size, duration, dimensions, audio streams as text. Use it instead of writing an ad-hoc ffprobe/ffmpeg script; drop `info=true` to load the file itself.
 - `extendedRead path="clip.mp3"` — audio block; transcription-capable models hear it.
 - `extendedRead path="demo.webm"` — transcoded to mp4 via ffmpeg, delivered as a video block.
 - Converted formats (webm/mkv/mov/avi → mp4, wma/aac/ogg → mp3) are transparent: just pass the file.

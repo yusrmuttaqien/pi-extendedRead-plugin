@@ -19,7 +19,7 @@ import { homedir } from "node:os";
 
 import type { PluginConfig } from "./config.js";
 import { resolveModelConfig } from "./config.js";
-import { ffmpegConvert } from "./ffmpeg.js";
+import { ffmpegConvert, probeMedia, renderProbeText } from "./ffmpeg.js";
 import { processImageBytes } from "./image.js";
 import { cropRegionToPng, ZOOM_UNAVAILABLE_HINT } from "./ffmpeg.js";
 import { renderGrid, renderLocate } from "./region.js";
@@ -104,6 +104,8 @@ export interface ExtendedReadParams {
 	grid?: { rows: number; cols: number; region?: { x: number; y: number; w: number; h: number } };
 	/** Coarse-to-fine tiling with overlap: tile a region into rows×cols sharp tiles, each extended into its neighbor by `overlap` fraction so targets on tile boundaries are fully inside at least one tile. */
 	locate?: { rows?: number; cols?: number; overlap?: number; region?: { x: number; y: number; w: number; h: number } };
+	/** Metadata-only first look (size, duration, dimensions, audio streams) on ffmpeg-decodable media — no media loaded. */
+	info?: boolean;
 }
 
 export interface ExtendedReadContext {
@@ -179,8 +181,26 @@ export async function readExtended(
 		};
 	}
 
-	// 3. Size cap (per-modality)
+	// 3. Info probe: metadata-only first look for ffmpeg-decodable media.
+	// Runs before the size cap and capability gate so a large file can be
+	// inspected before deciding how to load it; result is plain text.
 	const ext = extname(path).toLowerCase().slice(1);
+	if (params.info) {
+		const m = modalityOf(ext);
+		if (!m)
+			return {
+				content: [
+					{
+						type: "text",
+						text: `Probe [${ext}] ${size} bytes — info works on ffmpeg-decodable media (image/audio/video); for PDF use toc=true/pages, for PPTX pass the file directly`,
+					},
+				],
+			};
+		const info = await probeMedia(path, config.defaults.ffmpegTimeoutMs);
+		return { content: renderProbeText(info, size, ext).map((t) => ({ type: "text", text: t })) };
+	}
+
+	// 4. Size cap (per-modality)
 	const modality = modalityOf(ext);
 	const modelCfg = resolveModelConfig(config, ctx.modelId);
 	if (modality && size > modelCfg.maxBytes[modality]) {
@@ -194,7 +214,7 @@ export async function readExtended(
 		};
 	}
 
-	// 4. Capability gate
+	// 5. Capability gate
 	const input = modelCfg.input;
 
 	// 5. Dispatch

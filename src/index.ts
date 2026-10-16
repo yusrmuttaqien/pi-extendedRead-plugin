@@ -46,11 +46,13 @@ export default function activate(pi: ExtensionAPI) {
 			"Audio: wav, mp3, flac, ogg, aiff, aif, m4a, aac, wma, opus. " +
 			"Video: mp4, webm, mkv, mov, avi. " +
 			"PDF: text extraction (default) or page rendering to image. Use pages='1-5' for pagination, toc=true for outline, search='query' to find text, dpi=N for resolution, zoom='{x,y,w,h}' to crop+scale a rectangular region on any image — direct or converted formats and PDF image mode. grid={rows,cols[,region]} tiles a region into a regular grid of sharp per-cell crops, each with its exact zoom={...} hint — use it to pinpoint a cell/subject in a large image whose full-page view is too downscaled to read. locate={rows,cols[,region,overlap]} does coarse-to-fine tiling with overlap: the tool tiles a region into overlapping tiles, the model picks the tile containing the target, then drills in with zoom. " +
+			"Probe mode: info=true returns metadata only (size, duration, dimensions, audio streams) for image/audio/video without loading media — a first look on large video/audio; no ad-hoc ffprobe script needed. " +
 			"PPTX: converts to PDF via @s8fy/pptx-converter, then uses the PDF pipeline. " +
 			"For text files, use the native read tool.",
 		promptSnippet: "Read media files",
 		promptGuidelines: [
 			"Use extendedRead to read media files (images, audio, video, PDF) the user references.",
+			"For a first look at large video/audio, use info=true (metadata: size, duration, dimensions, audio streams) instead of writing an ad-hoc ffprobe script; drop info=true to load the file itself.",
 			"Use the native read tool for text files.",
 		],
 		parameters: Type.Object({
@@ -60,6 +62,7 @@ export default function activate(pi: ExtensionAPI) {
 			toc: Type.Optional(Type.Boolean({ description: "PDF: return table of contents/outline" })),
 			search: Type.Optional(Type.String({ description: "PDF: search for text (case-insensitive), returns matching pages with context" })),
 			dpi: Type.Optional(Type.Number({ description: "PDF: DPI for image mode (72-600, default from config)" })),
+			info: Type.Optional(Type.Boolean({ description: "Metadata-only first look on ffmpeg-decodable media (image/audio/video): size, duration, dimensions, video codec, audio streams. No media loaded; use before deciding how to load a large file. No ad-hoc ffprobe script needed." })),
 			zoom: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number(), w: Type.Number(), h: Type.Number() }, { description: "Crop + scale a rectangular region on any image — direct formats (png,jpg,gif,webp,bmp), converted formats (heic,tiff,tif,avif,...) and PDF image mode. Normalized [x,y,w,h] fractions 0–1 of the bounding box; omit for full frame." })),
 			grid: Type.Optional(Type.Object({
 				rows: Type.Number({ description: "Number of rows (>= 1)" }),
